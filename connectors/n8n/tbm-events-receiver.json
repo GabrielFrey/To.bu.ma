@@ -1,0 +1,60 @@
+{
+  "name": "TBM — Receive Budget Events (webhook)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tbm-events",
+        "options": {}
+      },
+      "id": "c2b2f0e2-0001-4a00-9000-000000000001",
+      "name": "TBM Event Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "tbm-events"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "strict" },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.type }}",
+              "rightValue": "hard_limit_blocked",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c2b2f0e2-0002-4a00-9000-000000000002",
+      "name": "Is hard-limit block?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {},
+      "id": "c2b2f0e2-0003-4a00-9000-000000000003",
+      "name": "Handle block (add your action)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [780, 220]
+    }
+  ],
+  "connections": {
+    "TBM Event Webhook": {
+      "main": [[{ "node": "Is hard-limit block?", "type": "main", "index": 0 }]]
+    },
+    "Is hard-limit block?": {
+      "main": [[{ "node": "Handle block (add your action)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "description": "Register this n8n Webhook URL as a TBM 'generic' webhook (POST /v1/webhooks). TBM will POST signed events {id,type,createdAt,data}; verify X-TBM-Signature with your channel secret. Branch on $json.body.type (hard_limit_blocked, approval_required, warning_threshold, ...)."
+  }
+}

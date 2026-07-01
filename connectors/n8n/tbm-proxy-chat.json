@@ -1,0 +1,47 @@
+{
+  "name": "TBM — Budgeted Chat Completion (proxy)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b1a1f0e2-0001-4a00-9000-000000000001",
+      "name": "When clicking Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:4000/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer tbm_demo_local_key" },
+            { "name": "X-TBM-Agent", "value": "n8n-workflow" },
+            { "name": "X-TBM-Task", "value": "={{ $json.task || 'default' }}" },
+            { "name": "X-TBM-Upstream", "value": "mock" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": {{ JSON.stringify($json.prompt || 'Summarize the latest support ticket.') }} }\n  ],\n  \"max_tokens\": 128\n}",
+        "options": {}
+      },
+      "id": "b1a1f0e2-0002-4a00-9000-000000000002",
+      "name": "TBM Proxy: chat/completions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300]
+    }
+  ],
+  "connections": {
+    "When clicking Test": {
+      "main": [[{ "node": "TBM Proxy: chat/completions", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "description": "Any n8n LLM step becomes budgeted by pointing the HTTP Request node at the TBM proxy. A 402/429 body means the call was blocked by a budget/policy. Replace the mock upstream header with your real OpenAI key stored in TBM to go live."
+  }
+}

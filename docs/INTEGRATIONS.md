@@ -134,4 +134,26 @@ handler = make_tbm_callback_handler(TokenBudgetClient(api_key="tbm_..."), scope=
 # pass handler in callbacks=[handler] to your LangChain LLM/chain
 ```
 
-<!-- Section 5 (No-code) is added in its phase. -->
+## 5. No-code connectors
+
+**Decision — n8n: ready HTTP recipe over a custom node.** A published custom node requires npm
+publishing + community-node review (out of scope) and pins you to a release cadence. n8n's
+built-in **HTTP Request** and **Webhook** nodes already cover 100% of the TBM REST API and the
+proxy with zero install, so we ship importable workflows instead.
+
+### n8n (import the JSON in `connectors/n8n/`)
+- `tbm-proxy-chat.json` — Manual Trigger → HTTP Request to the **TBM proxy**
+  (`/v1/chat/completions`). Any n8n LLM step becomes budgeted; a `402`/`429` means blocked.
+- `tbm-events-receiver.json` — a **Webhook** node that receives TBM events; register its URL via
+  `POST /v1/webhooks` (`kind: generic`). Branch on `type` (e.g. `hard_limit_blocked`).
+
+Import: n8n → *Workflows* → *Import from File*. Edit the `Authorization` header / URL for your host.
+
+### Zapier / Make
+Full published apps are out of scope; the complete **triggers/actions mapping** and working
+webhook recipes are in [`connectors/zapier-make/SPEC.md`](../connectors/zapier-make/SPEC.md).
+Summary:
+- **Triggers** (TBM → automation): register a TBM webhook at the platform's catch-hook URL to
+  receive `warning_threshold`, `hard_limit_blocked`, `approval_required`, etc.
+- **Actions** (automation → TBM): create/update budget, check-budget, get spend, approve/deny,
+  or make a budgeted LLM call via the proxy — all plain REST calls.
