@@ -19,6 +19,26 @@ const PRICING: Array<{
   { model: 'gpt-3.5-turbo', inputPerMTokens: 0.5, outputPerMTokens: 1.5, cachedPerMTokens: 0, contextWindow: 16385 },
 ];
 
+/** Wipe all tables so seeding is repeatable. Order respects FKs. */
+export async function resetAll() {
+  await prisma.tokenUsage.deleteMany();
+  await prisma.approval.deleteMany();
+  await prisma.policyEvent.deleteMany();
+  await prisma.llmRequest.deleteMany();
+  await prisma.budgetPolicy.deleteMany();
+  await prisma.budget.deleteMany();
+  await prisma.task.deleteMany();
+  await prisma.session.deleteMany();
+  await prisma.agent.deleteMany();
+  await prisma.project.deleteMany();
+  await prisma.modelPricing.deleteMany();
+  await prisma.providerKey.deleteMany();
+  await prisma.apiKey.deleteMany();
+  await prisma.user.deleteMany();
+  await prisma.auditLog.deleteMany();
+  await prisma.organization.deleteMany();
+}
+
 export async function seed() {
   const org = await prisma.organization.create({ data: { name: 'Demo Org' } });
 
@@ -126,7 +146,8 @@ export async function seed() {
 // Run directly.
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
-  seed()
+  resetAll()
+    .then(() => seed())
     .then((r) => {
       console.log('Seeded demo data.');
       console.log('  organizationId:', r.org.id);

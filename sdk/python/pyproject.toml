@@ -1,0 +1,17 @@
+[project]
+name = "tbm-sdk"
+version = "0.1.0"
+description = "Token Budget Manager SDK — enforce token budgets between your agent and the LLM API."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+# Accurate token estimation. Without it the SDK falls back to a chars/4 heuristic.
+tiktoken = ["tiktoken>=0.7.0"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["tbm_sdk"]
