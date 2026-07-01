@@ -8,6 +8,7 @@ export default defineConfig({
       DATABASE_URL: 'file:./test.db',
       MASTER_KEY: 'test-master-key-0123456789abcdef',
       LOG_LEVEL: 'silent',
+      TBM_PROXY_UPSTREAM: 'mock',
     },
     fileParallelism: false,
     hookTimeout: 30000,

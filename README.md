@@ -120,6 +120,87 @@ SDK methods (identical surface in both languages): `beforeLLMCall`, `afterLLMCal
 `estimateTokens`, `enforceBudget`, `chooseModel`, `compressContextIfNeeded`, `recordToolUsage`
 (+ `complete` convenience that runs the whole gateway via the server's mock provider).
 
+## Integration options
+
+TBM is designed to embed into **any** business process. Pick the integration that fits:
+
+| Option | When to use | Where |
+|---|---|---|
+| **Drop-in proxy** | Any app already using an OpenAI SDK — zero code changes | below |
+| **SDK (TS/Python)** | You want explicit control (estimate/enforce/record) | above |
+| **Webhooks / events** | React to limits, approvals, loops in other systems | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
+| **Docker service** | Deploy the whole stack (API + Postgres + dashboard) | [Deploy with Docker](#deploy-with-docker) |
+| **Framework middleware** | Vercel AI SDK / LangChain (JS + Python) | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
+| **No-code (n8n / Zapier / Make)** | Automations without writing code | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
+
+## Drop-in integration — transparent OpenAI-compatible proxy
+
+**Change your `base_url` and API key. That's the entire integration.** Every call is budgeted,
+enforced (blocked before it's forwarded if a hard limit is hit), optimized (model downgrade /
+context compression), forwarded to the real provider, and recorded — transparently.
+
+Endpoints (wire-compatible with OpenAI): `POST /v1/chat/completions`, `POST /v1/completions`,
+`POST /v1/embeddings`. Streaming (`stream: true`) is supported.
+
+**Auth:** send your **TBM** API key where the OpenAI key normally goes (`Authorization: Bearer
+<tbm_key>`). TBM holds the real provider key encrypted at rest and injects it upstream.
+
+**Attribution headers (optional, resolved find-or-create by name):**
+`X-TBM-Project`, `X-TBM-Agent`, `X-TBM-Session`, `X-TBM-Task`, `X-TBM-User`. When absent, the
+call is attributed at org level only (org budgets still apply). `X-TBM-Upstream: mock|openai`
+overrides the upstream per request (default from `TBM_PROXY_UPSTREAM`, else `openai`).
+
+### openai-python
+```python
+from openai import OpenAI
+client = OpenAI(
+    base_url="http://localhost:4000/v1",   # <- TBM proxy
+    api_key="tbm_demo_local_key",          # <- your TBM key (not the OpenAI key)
+    default_headers={"X-TBM-Agent": "invoice-bot", "X-TBM-Task": "classify"},
+)
+resp = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[{"role": "user", "content": "Categorize this invoice line."}],
+)
+print(resp.choices[0].message.content)   # 402/429 raised automatically if over budget
+```
+
+### openai-node
+```ts
+import OpenAI from 'openai';
+const client = new OpenAI({
+  baseURL: 'http://localhost:4000/v1',     // <- TBM proxy
+  apiKey: 'tbm_demo_local_key',            // <- your TBM key
+  defaultHeaders: { 'X-TBM-Agent': 'invoice-bot', 'X-TBM-Task': 'classify' },
+});
+const resp = await client.chat.completions.create({
+  model: 'gpt-4o-mini',
+  messages: [{ role: 'user', content: 'Categorize this invoice line.' }],
+});
+```
+
+### Try it with curl (offline mock upstream)
+```bash
+cd backend && npm run db:setup && npm run dev          # proxy on :4000
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer tbm_demo_local_key" \
+  -H "X-TBM-Upstream: mock" -H "X-TBM-Agent: report-writer" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}],"max_tokens":32}'
+```
+
+**Enforcement is truthful:** a hard-limit breach returns an OpenAI-style error object with HTTP
+`402` (`code: budget_exceeded` / `approval_required`) or `429` (`retry_limit_exceeded` /
+`tool_limit_exceeded`) **before** the upstream call. `degrade` swaps the model; `compress`/
+`truncate` rewrite the outgoing messages. Response headers `X-TBM-Request-Id`, `X-TBM-Decision`,
+and `X-TBM-Usage-Estimated` are added. On streams, usage is read from the final chunk (send
+`stream_options: {include_usage: true}`); otherwise TBM records a tokenizer estimate and sets
+`X-TBM-Usage-Estimated: true`.
+
+**Real upstream:** set `OPENAI_API_KEY` in `backend/.env`, run `npm run db:setup` to store it
+encrypted, and leave `TBM_PROXY_UPSTREAM=openai` (default). For offline demos/tests use
+`TBM_PROXY_UPSTREAM=mock` or the `X-TBM-Upstream: mock` header.
+
 ## Using a real LLM provider (OpenAI-compatible)
 
 1. Put a key in `backend/.env`: `OPENAI_API_KEY="sk-..."` (and `OPENAI_BASE_URL` for compatible

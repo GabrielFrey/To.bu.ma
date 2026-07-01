@@ -4,6 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
 import { config } from './config.js';
 import { registerRoutes } from './routes.js';
+import { registerProxyRoutes } from './routes/proxy.js';
 
 export async function buildServer() {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
@@ -23,6 +24,7 @@ export async function buildServer() {
   });
 
   await registerRoutes(app);
+  await registerProxyRoutes(app);
   return app;
 }
 

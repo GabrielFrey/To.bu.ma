@@ -29,6 +29,35 @@ export async function authenticate(req: FastifyRequest, reply: FastifyReply) {
   void prisma.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
 }
 
+/**
+ * Proxy auth: OpenAI SDKs send the key as `Authorization: Bearer <key>`, so the
+ * transparent proxy accepts the TBM key there (falling back to x-api-key). This
+ * is what makes "just change base_url + api key" work with any OpenAI client.
+ */
+export async function authenticateProxy(req: FastifyRequest, reply: FastifyReply) {
+  let token: string | undefined;
+  const authz = req.headers['authorization'];
+  if (typeof authz === 'string' && authz.toLowerCase().startsWith('bearer ')) {
+    token = authz.slice(7).trim();
+  }
+  if (!token && typeof req.headers['x-api-key'] === 'string') {
+    token = req.headers['x-api-key'] as string;
+  }
+  if (!token) {
+    return reply.code(401).send({
+      error: { message: 'Missing API key. Send it as Authorization: Bearer <tbm_key>.', type: 'invalid_request_error', code: 'missing_api_key' },
+    });
+  }
+  const key = await prisma.apiKey.findUnique({ where: { keyHash: hashApiKey(token) } });
+  if (!key) {
+    return reply.code(401).send({
+      error: { message: 'Invalid API key.', type: 'invalid_request_error', code: 'invalid_api_key' },
+    });
+  }
+  req.auth = { organizationId: key.organizationId, role: key.role, apiKeyId: key.id };
+  void prisma.apiKey.update({ where: { id: key.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+}
+
 /** RBAC guard factory: require at least the given role. */
 export function requireRole(minRole: 'viewer' | 'member' | 'admin' | 'owner') {
   return async (req: FastifyRequest, reply: FastifyReply) => {
