@@ -14,4 +14,4 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["tbm_sdk"]
+packages = ["tbm_sdk", "tbm_sdk.integrations"]

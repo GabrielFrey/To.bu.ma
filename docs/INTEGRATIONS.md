@@ -93,4 +93,45 @@ uses Postgres for real concurrency/durability. One canonical `schema.prisma` dri
 Postgres variant is generated (`npm run prisma:generate:pg`) by swapping only the datasource
 provider, so there is no schema drift. Enums are validated string columns to stay portable.
 
-<!-- Sections 4 (Framework middleware) and 5 (No-code) are added in their phases. -->
+## 4. Framework middleware
+
+These adapters are deliberately **thin: they route through the Phase 1 proxy** instead of
+duplicating budget logic. One enforcement path, every framework covered.
+
+**Trade-off — proxy routing vs native callbacks:** routing via `base_url` gives full
+enforcement (block/degrade/compress) for free and is a one-liner. Native callbacks (e.g. a
+LangChain handler) can only *observe/record* after the fact — they can't block a call
+pre-flight. We therefore make proxy routing the default and offer a native callback only for
+cases where you cannot change `base_url`.
+
+### TypeScript — `@tbm/integrations` (`sdk/integrations/typescript`)
+```ts
+// Vercel AI SDK  (npm i ai @ai-sdk/openai)
+import { generateText } from 'ai';
+import { tbmOpenAIProvider } from '@tbm/integrations';
+const openai = await tbmOpenAIProvider({ apiKey: 'tbm_...', scope: { agent: 'bot' } });
+const { text } = await generateText({ model: openai('gpt-4o-mini'), prompt: 'Write a haiku.' });
+
+// LangChain.js  (npm i @langchain/openai @langchain/core)
+import { tbmChatOpenAI } from '@tbm/integrations';
+const model = await tbmChatOpenAI({ apiKey: 'tbm_...', scope: { agent: 'bot' } }, { model: 'gpt-4o-mini' });
+await model.invoke('Write a haiku about budgets.');
+```
+The framework packages are **optional peer deps** (imported dynamically), so `@tbm/integrations`
+installs and typechecks without them. See `sdk/integrations/typescript/example.ts`.
+
+### Python — LangChain (`sdk/python/tbm_sdk/integrations`)
+```python
+# pip install langchain-openai
+from tbm_sdk.integrations import tbm_chat_openai
+model = tbm_chat_openai(model="gpt-4o-mini", api_key="tbm_...", scope={"agent": "bot"})
+print(model.invoke("Write a haiku about budgets.").content)
+
+# Native callback (record-only) when you can't change base_url:
+from tbm_sdk import TokenBudgetClient
+from tbm_sdk.integrations import make_tbm_callback_handler
+handler = make_tbm_callback_handler(TokenBudgetClient(api_key="tbm_..."), scope={"agent": "bot"})
+# pass handler in callbacks=[handler] to your LangChain LLM/chain
+```
+
+<!-- Section 5 (No-code) is added in its phase. -->
