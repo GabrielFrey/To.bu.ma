@@ -21,6 +21,9 @@ const PRICING: Array<{
 
 /** Wipe all tables so seeding is repeatable. Order respects FKs. */
 export async function resetAll() {
+  await prisma.webhookDelivery.deleteMany();
+  await prisma.webhook.deleteMany();
+  await prisma.eventLog.deleteMany();
   await prisma.tokenUsage.deleteMany();
   await prisma.approval.deleteMany();
   await prisma.policyEvent.deleteMany();

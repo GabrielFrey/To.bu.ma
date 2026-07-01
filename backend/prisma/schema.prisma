@@ -26,6 +26,8 @@ model Organization {
   tokenUsage   TokenUsage[]
   policyEvents PolicyEvent[]
   auditLogs    AuditLog[]
+  webhooks     Webhook[]
+  eventLogs    EventLog[]
 }
 
 model User {
@@ -278,4 +280,54 @@ model AuditLog {
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@index([organizationId, createdAt])
+}
+
+model Webhook {
+  id             String   @id @default(cuid())
+  organizationId String
+  kind           String   @default("generic") // generic | slack | http | email
+  url            String? // target URL for generic/slack/http (null for email)
+  target         String? // email address for kind=email
+  secret         String // HMAC signing secret (also used to validate)
+  events         String   @default("all") // "all" or comma-separated event types
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  organization Organization      @relation(fields: [organizationId], references: [id])
+  deliveries   WebhookDelivery[]
+
+  @@index([organizationId, active])
+}
+
+model WebhookDelivery {
+  id             String    @id @default(cuid())
+  webhookId      String
+  organizationId String
+  event          String
+  payload        String // JSON string that was signed/sent
+  status         String    @default("pending") // pending | success | failed
+  attempts       Int       @default(0)
+  responseStatus Int?
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  deliveredAt    DateTime?
+  nextAttemptAt  DateTime?
+
+  webhook Webhook @relation(fields: [webhookId], references: [id])
+
+  @@index([webhookId, status])
+  @@index([organizationId, createdAt])
+}
+
+model EventLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  type           String
+  payload        String // JSON
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, type])
 }

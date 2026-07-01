@@ -222,7 +222,14 @@ encrypted, and leave `TBM_PROXY_UPSTREAM=openai` (default). For offline demos/te
 | `POST /optimize/compress`, `/optimize/choose-model` | optimization helpers |
 | `POST /agents/:id/pause` \| `/resume` | stop/allow an agent |
 | `GET /approvals`, `POST /approvals/:id/approve` \| `/deny` | approval workflow |
+| `GET /v1/approvals/:id/resolve?action=&token=` | one-click approve/deny (signed token, no key) |
+| `POST /webhooks`, `GET /webhooks`, `DELETE /webhooks/:id` | manage webhook/notification channels |
+| `POST /webhooks/test`, `GET /webhooks/:id/deliveries`, `GET /events` | test + inspect deliveries/event feed |
+| `POST /v1/chat/completions`, `/v1/completions`, `/v1/embeddings` | **drop-in proxy** (Bearer auth) |
 | `GET /analytics/{total,by-agent,by-task,by-project,active-budgets,warnings,blocked,expensive-prompts,loops,recommendations}` | dashboard data |
+
+See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for the drop-in proxy, webhooks/notifications,
+Docker, framework middleware, and no-code connector guides.
 
 ## Switching SQLite → PostgreSQL
 

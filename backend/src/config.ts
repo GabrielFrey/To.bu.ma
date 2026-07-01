@@ -17,4 +17,10 @@ export const config = {
   // Loop / retry detection thresholds (defaults; policies can override).
   loopThreshold: 3,
   retryThreshold: 3,
+  // Public base URL used to build actionable approval links in notifications.
+  publicUrl: process.env.TBM_PUBLIC_URL ?? `http://localhost:${Number(process.env.PORT ?? 4000)}`,
+  // Outbound webhook delivery: retry with exponential backoff.
+  webhookMaxAttempts: Number(process.env.TBM_WEBHOOK_MAX_ATTEMPTS ?? 5),
+  webhookBackoffMs: Number(process.env.TBM_WEBHOOK_BACKOFF_MS ?? 1000),
+  webhookTimeoutMs: Number(process.env.TBM_WEBHOOK_TIMEOUT_MS ?? 5000),
 };

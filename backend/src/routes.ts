@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { prisma } from './db.js';
 import { authenticate, requireRole } from './auth.js';
@@ -8,6 +9,7 @@ import { getProvider } from './providers/index.js';
 import { decryptSecret } from './crypto.js';
 import * as analytics from './services/analytics.js';
 import { compressContextIfNeeded, chooseModel } from './services/optimization.js';
+import { emitEvent, EVENT_TYPES, verifyApprovalActionToken } from './services/events.js';
 import type { ScopeChain } from './types.js';
 
 const scopeSchema = z.object({
@@ -22,6 +24,34 @@ const messageSchema = z.object({ role: z.string(), content: z.string(), name: z.
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get('/health', async () => ({ ok: true }));
+
+  // Actionable approval link (no API key; verified by signed token). Lets a
+  // Slack/email recipient approve or deny with one click.
+  app.get('/v1/approvals/:id/resolve', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = z.object({ action: z.enum(['approve', 'deny']), token: z.string() }).safeParse(req.query);
+    if (!q.success) return reply.code(400).send({ error: 'action and token required' });
+    const { action, token } = q.data;
+    if (!verifyApprovalActionToken(id, action, token)) return reply.code(403).send({ error: 'invalid token' });
+    const appr = await prisma.approval.findUnique({ where: { id } });
+    if (!appr) return reply.code(404).send({ error: 'approval not found' });
+    if (appr.status !== 'pending') return reply.send({ status: appr.status, note: 'already resolved' });
+    if (action === 'approve') {
+      await prisma.llmRequest.update({ where: { id: appr.requestId }, data: { status: 'reserved', decision: 'allow' } });
+    } else {
+      await prisma.llmRequest.update({ where: { id: appr.requestId }, data: { status: 'blocked' } });
+    }
+    const updated = await prisma.approval.update({
+      where: { id },
+      data: { status: action === 'approve' ? 'approved' : 'denied', decidedAt: new Date() },
+    });
+    await emitEvent({
+      organizationId: appr.organizationId,
+      type: 'approval_resolved',
+      data: { approvalId: id, status: updated.status, reason: appr.reason, via: 'link' },
+    }).catch(() => {});
+    return reply.send({ status: updated.status });
+  });
 
   // All /v1 routes require authentication.
   app.register(async (v1) => {
@@ -257,7 +287,9 @@ export async function registerRoutes(app: FastifyInstance) {
         where: { id, project: { organizationId: req.auth!.organizationId } },
       });
       if (!agent) return reply.code(404).send({ error: 'agent not found' });
-      return prisma.agent.update({ where: { id }, data: { status: 'paused' } });
+      const updated = await prisma.agent.update({ where: { id }, data: { status: 'paused' } });
+      await emitEvent({ organizationId: req.auth!.organizationId, type: 'agent_paused', data: { agentId: id, agentName: agent.name } }).catch(() => {});
+      return updated;
     });
 
     v1.post('/agents/:id/resume', { preHandler: requireRole('member') }, async (req, reply) => {
@@ -266,7 +298,9 @@ export async function registerRoutes(app: FastifyInstance) {
         where: { id, project: { organizationId: req.auth!.organizationId } },
       });
       if (!agent) return reply.code(404).send({ error: 'agent not found' });
-      return prisma.agent.update({ where: { id }, data: { status: 'active' } });
+      const updated = await prisma.agent.update({ where: { id }, data: { status: 'active' } });
+      await emitEvent({ organizationId: req.auth!.organizationId, type: 'agent_resumed', data: { agentId: id, agentName: agent.name } }).catch(() => {});
+      return updated;
     });
 
     // ---- Approvals ----
@@ -282,7 +316,9 @@ export async function registerRoutes(app: FastifyInstance) {
       const appr = await prisma.approval.findFirst({ where: { id, organizationId: req.auth!.organizationId } });
       if (!appr) return reply.code(404).send({ error: 'approval not found' });
       await prisma.llmRequest.update({ where: { id: appr.requestId }, data: { status: 'reserved', decision: 'allow' } });
-      return prisma.approval.update({ where: { id }, data: { status: 'approved', decidedAt: new Date() } });
+      const updated = await prisma.approval.update({ where: { id }, data: { status: 'approved', decidedAt: new Date() } });
+      await emitEvent({ organizationId: req.auth!.organizationId, type: 'approval_resolved', data: { approvalId: id, status: 'approved', reason: appr.reason } }).catch(() => {});
+      return updated;
     });
 
     v1.post('/approvals/:id/deny', { preHandler: requireRole('admin') }, async (req, reply) => {
@@ -290,8 +326,71 @@ export async function registerRoutes(app: FastifyInstance) {
       const appr = await prisma.approval.findFirst({ where: { id, organizationId: req.auth!.organizationId } });
       if (!appr) return reply.code(404).send({ error: 'approval not found' });
       await prisma.llmRequest.update({ where: { id: appr.requestId }, data: { status: 'blocked' } });
-      return prisma.approval.update({ where: { id }, data: { status: 'denied', decidedAt: new Date() } });
+      const updated = await prisma.approval.update({ where: { id }, data: { status: 'denied', decidedAt: new Date() } });
+      await emitEvent({ organizationId: req.auth!.organizationId, type: 'approval_resolved', data: { approvalId: id, status: 'denied', reason: appr.reason } }).catch(() => {});
+      return updated;
     });
+
+    // ---- Webhooks / notification channels ----
+    v1.post('/webhooks', { preHandler: requireRole('admin') }, async (req, reply) => {
+      const body = z
+        .object({
+          kind: z.enum(['generic', 'slack', 'http', 'email']).default('generic'),
+          url: z.string().url().optional(),
+          target: z.string().optional(), // email address for kind=email
+          secret: z.string().optional(),
+          events: z.union([z.literal('all'), z.array(z.enum(EVENT_TYPES))]).default('all'),
+        })
+        .parse(req.body);
+      if (body.kind === 'email' && !body.target) return reply.code(400).send({ error: 'email channel requires target' });
+      if (body.kind !== 'email' && !body.url) return reply.code(400).send({ error: 'this channel requires url' });
+      const events = Array.isArray(body.events) ? body.events.join(',') : 'all';
+      const wh = await prisma.webhook.create({
+        data: {
+          organizationId: req.auth!.organizationId,
+          kind: body.kind,
+          url: body.url,
+          target: body.target,
+          secret: body.secret ?? 'whsec_' + randomBytes(24).toString('hex'),
+          events,
+        },
+      });
+      return reply.code(201).send(wh);
+    });
+
+    v1.get('/webhooks', async (req) =>
+      prisma.webhook.findMany({ where: { organizationId: req.auth!.organizationId }, orderBy: { createdAt: 'desc' } })
+    );
+
+    v1.delete('/webhooks/:id', { preHandler: requireRole('admin') }, async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const wh = await prisma.webhook.findFirst({ where: { id, organizationId: req.auth!.organizationId } });
+      if (!wh) return reply.code(404).send({ error: 'webhook not found' });
+      await prisma.webhookDelivery.deleteMany({ where: { webhookId: id } });
+      await prisma.webhook.delete({ where: { id } });
+      return reply.send({ deleted: true });
+    });
+
+    v1.get('/webhooks/:id/deliveries', async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const wh = await prisma.webhook.findFirst({ where: { id, organizationId: req.auth!.organizationId } });
+      if (!wh) return reply.code(404).send({ error: 'webhook not found' });
+      return prisma.webhookDelivery.findMany({ where: { webhookId: id }, orderBy: { createdAt: 'desc' }, take: 50 });
+    });
+
+    // Fire a synthetic event to test wiring.
+    v1.post('/webhooks/test', { preHandler: requireRole('admin') }, async (req) => {
+      const result = await emitEvent({
+        organizationId: req.auth!.organizationId,
+        type: 'warning_threshold',
+        data: { budgetName: 'test budget', utilization: 0.85, test: true },
+      });
+      return { emitted: true, ...result };
+    });
+
+    v1.get('/events', async (req) =>
+      prisma.eventLog.findMany({ where: { organizationId: req.auth!.organizationId }, orderBy: { createdAt: 'desc' }, take: 100 })
+    );
 
     // ---- Analytics ----
     const org = (req: any) => req.auth!.organizationId as string;

@@ -1,6 +1,9 @@
 import { prisma } from '../src/db.js';
 
 export async function resetDb() {
+  await prisma.webhookDelivery.deleteMany();
+  await prisma.webhook.deleteMany();
+  await prisma.eventLog.deleteMany();
   await prisma.tokenUsage.deleteMany();
   await prisma.approval.deleteMany();
   await prisma.policyEvent.deleteMany();

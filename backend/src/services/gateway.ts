@@ -8,6 +8,7 @@ import { detectLoopSignals, requestSignature } from './loopDetection.js';
 import { evaluatePolicies, type PolicyDecision } from './policyEngine.js';
 import { chooseModel } from './optimization.js';
 import { createReservation } from './accounting.js';
+import { emitEvent, approvalLinks, type EventType } from './events.js';
 
 export interface CheckBudgetInput {
   chain: ScopeChain;
@@ -114,8 +115,9 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
   });
 
   // Create an approval record if required.
+  let approvalId: string | undefined;
   if (policy.decision === 'require-approval') {
-    await prisma.approval.create({
+    const approval = await prisma.approval.create({
       data: {
         organizationId: input.chain.organizationId,
         requestId: reservation.id,
@@ -123,7 +125,12 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
         status: 'pending',
       },
     });
+    approvalId = approval.id;
   }
+
+  // Fan out events (best-effort; drives webhooks + notifications). Mapped from
+  // the effective decision + contributing budget.
+  await emitDecisionEvents(input.chain, policy, budgets, approvalId);
 
   return {
     requestId: reservation.id,
@@ -142,4 +149,43 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
     signals: { signatureRepeats: loop.signatureRepeats, failedAttempts: loop.failedAttempts },
     policy,
   };
+}
+
+/** Translate a policy decision into an emitted event (for webhooks/notifications). */
+async function emitDecisionEvents(
+  chain: ScopeChain,
+  policy: PolicyDecision,
+  budgets: BudgetStatus[],
+  approvalId?: string
+): Promise<void> {
+  const budget = policy.budgetId ? budgets.find((b) => b.budgetId === policy.budgetId) : undefined;
+  const budgetName = budget?.name ?? 'budget';
+  const emit = (type: EventType, data: Record<string, unknown>) =>
+    emitEvent({ organizationId: chain.organizationId, type, data: { agentId: chain.agentId ?? null, taskId: chain.taskId ?? null, ...data } }).catch(() => {});
+
+  switch (policy.decision) {
+    case 'warn':
+      await emit('warning_threshold', { budgetName, utilization: policy.utilization ?? budget?.utilization ?? 0 });
+      break;
+    case 'degrade':
+    case 'compress':
+    case 'summarize':
+      await emit('soft_limit_crossed', { budgetName, decision: policy.decision, reason: policy.reason });
+      break;
+    case 'require-approval':
+      if (approvalId) {
+        await emit('approval_required', { reason: policy.reason, approvalId, ...approvalLinks(approvalId) });
+      }
+      break;
+    case 'stop-agent':
+      if (/loop/i.test(policy.reason)) await emit('loop_stopped', { reason: policy.reason });
+      else await emit('hard_limit_blocked', { budgetName, reason: policy.reason });
+      break;
+    case 'retry-limit':
+    case 'tool-limit':
+      await emit('hard_limit_blocked', { budgetName, reason: policy.reason, decision: policy.decision });
+      break;
+    default:
+      break;
+  }
 }
