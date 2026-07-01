@@ -1,0 +1,281 @@
+// Token Budget Manager — Prisma schema.
+// Runnable MVP targets SQLite; switch `provider` to "postgresql" and point
+// DATABASE_URL at Postgres for production. Enums are modeled as String columns
+// (validated in app code) so the same schema runs on both engines.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  users        User[]
+  projects     Project[]
+  apiKeys      ApiKey[]
+  providerKeys ProviderKey[]
+  budgets      Budget[]
+  llmRequests  LlmRequest[]
+  tokenUsage   TokenUsage[]
+  policyEvents PolicyEvent[]
+  auditLogs    AuditLog[]
+}
+
+model User {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String
+  name           String?
+  role           String   @default("member") // owner | admin | member | viewer
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([organizationId, email])
+}
+
+model ApiKey {
+  id             String    @id @default(cuid())
+  organizationId String
+  projectId      String?
+  userId         String?
+  name           String
+  keyHash        String    @unique // sha256 of the token; plaintext never stored
+  role           String    @default("member")
+  createdAt      DateTime  @default(now())
+  lastUsedAt     DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+}
+
+model ProviderKey {
+  id             String   @id @default(cuid())
+  organizationId String
+  provider       String // "openai" | "mock"
+  label          String
+  ciphertext     String // AES-256-GCM encrypted provider secret
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+}
+
+model Project {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  agents       Agent[]
+
+  @@index([organizationId])
+}
+
+model Agent {
+  id        String   @id @default(cuid())
+  projectId String
+  name      String
+  status    String   @default("active") // active | paused
+  createdAt DateTime @default(now())
+
+  project     Project      @relation(fields: [projectId], references: [id])
+  sessions    Session[]
+  llmRequests LlmRequest[]
+
+  @@index([projectId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  agentId   String
+  label     String?
+  createdAt DateTime @default(now())
+
+  agent       Agent        @relation(fields: [agentId], references: [id])
+  tasks       Task[]
+  llmRequests LlmRequest[]
+
+  @@index([agentId])
+}
+
+model Task {
+  id        String   @id @default(cuid())
+  sessionId String
+  name      String?
+  priority  Int      @default(5)
+  status    String   @default("active") // active | done | failed
+  createdAt DateTime @default(now())
+
+  session     Session      @relation(fields: [sessionId], references: [id])
+  llmRequests LlmRequest[]
+
+  @@index([sessionId])
+}
+
+model LlmRequest {
+  id             String   @id @default(cuid())
+  organizationId String
+  projectId      String?
+  userId         String?
+  agentId        String?
+  sessionId      String?
+  taskId         String?
+  model          String
+  provider       String   @default("mock")
+  status         String   @default("reserved") // reserved | completed | failed | blocked | expired
+  signature      String? // hash(normalized prompt + model) for loop/dedup detection
+  promptTokens   Int      @default(0)
+  expectedCompletionTokens Int @default(0)
+  reservedTokens Int      @default(0)
+  estimatedCostUsd Float  @default(0)
+  decision       String? // policy decision at check time
+  attempt        Int      @default(1)
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  agent        Agent?       @relation(fields: [agentId], references: [id])
+  session      Session?     @relation(fields: [sessionId], references: [id])
+  task         Task?        @relation(fields: [taskId], references: [id])
+  usage        TokenUsage?
+  approvals    Approval[]
+
+  @@index([sessionId, signature])
+  @@index([organizationId, createdAt])
+  @@index([agentId, createdAt])
+  @@index([taskId])
+}
+
+model TokenUsage {
+  id             String   @id @default(cuid())
+  requestId      String   @unique
+  organizationId String
+  projectId      String?
+  agentId        String?
+  sessionId      String?
+  taskId         String?
+  model          String
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  cachedTokens   Int      @default(0)
+  toolTokens     Int      @default(0)
+  totalTokens    Int      @default(0)
+  costUsd        Float    @default(0)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  request      LlmRequest   @relation(fields: [requestId], references: [id])
+
+  @@index([organizationId, createdAt])
+  @@index([agentId, createdAt])
+  @@index([taskId])
+}
+
+model Budget {
+  id               String   @id @default(cuid())
+  organizationId   String
+  name             String
+  level            String // ORGANIZATION | PROJECT | USER | AGENT | SESSION | TASK | TOOL_CALL | REQUEST
+  scopeId          String? // id of the entity this budget applies to (null = org-wide for ORGANIZATION level)
+  metric           String   @default("TOKENS") // TOKENS | COST_USD
+  hardLimit        Float
+  softLimit        Float?
+  warningThreshold Float    @default(0.8) // fraction of hardLimit
+  resetPeriod      String   @default("MONTHLY") // NEVER | HOURLY | DAILY | WEEKLY | MONTHLY
+  priority         Int      @default(5)
+  fallbackBehavior String   @default("BLOCK") // BLOCK | DEGRADE | SUMMARIZE | REQUIRE_APPROVAL | STOP_AGENT
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id])
+  policies     BudgetPolicy[]
+  events       PolicyEvent[]
+
+  @@index([level, scopeId, active])
+  @@index([organizationId])
+}
+
+model BudgetPolicy {
+  id         String   @id @default(cuid())
+  budgetId   String
+  name       String
+  condition  String // e.g. "utilization>=0.8" | "loop" | "retries>=3" | "toolCalls>=20" | "requestCost>=0.5"
+  action     String // ALLOW | WARN | DEGRADE | COMPRESS | SUMMARIZE | TRUNCATE | REQUIRE_APPROVAL | STOP_AGENT | RETRY_LIMIT | TOOL_LIMIT
+  params     String? // JSON blob of action params
+  priority   Int      @default(5)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  budget Budget @relation(fields: [budgetId], references: [id])
+
+  @@index([budgetId, active])
+}
+
+model PolicyEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  budgetId       String?
+  requestId      String?
+  agentId        String?
+  taskId         String?
+  decision       String
+  reason         String
+  utilization    Float?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  budget       Budget?      @relation(fields: [budgetId], references: [id])
+
+  @@index([organizationId, createdAt])
+}
+
+model Approval {
+  id             String   @id @default(cuid())
+  organizationId String
+  requestId      String
+  reason         String
+  status         String   @default("pending") // pending | approved | denied
+  requestedBy    String?
+  decidedBy      String?
+  createdAt      DateTime @default(now())
+  decidedAt      DateTime?
+
+  request LlmRequest @relation(fields: [requestId], references: [id])
+
+  @@index([organizationId, status])
+}
+
+model ModelPricing {
+  id                 String  @id @default(cuid())
+  organizationId     String? // null = global default pricing
+  provider           String  @default("openai")
+  model              String
+  inputPerMTokens    Float // USD per 1M input tokens
+  outputPerMTokens   Float // USD per 1M output tokens
+  cachedPerMTokens   Float   @default(0)
+  contextWindow      Int     @default(128000)
+  active             Boolean @default(true)
+
+  @@unique([provider, model, organizationId])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  actor          String
+  action         String
+  target         String?
+  metadata       String? // JSON
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@index([organizationId, createdAt])
+}
