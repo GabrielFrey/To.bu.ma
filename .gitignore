@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env
+.DS_Store
+backend/prisma/*.db
+backend/prisma/*.db-journal
+__pycache__/
+*.pyc
+.venv/
+coverage/
+
