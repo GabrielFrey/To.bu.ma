@@ -77,4 +77,20 @@ links point at your public host.
 horizontal scale move delivery to a durable queue (e.g. BullMQ/Redis) — the `dispatchDelivery`
 function is the single seam to swap.
 
-<!-- Sections 3 (Docker), 4 (Framework middleware), and 5 (No-code) are added in their phases. -->
+## 3. Deploy as a service (Docker)
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+Brings up **backend + Postgres + dashboard**. Dashboard on `:8080`, API/proxy on `:4000`.
+Health: `GET /health` (liveness), `GET /ready` (readiness — checks DB). First boot applies the
+Postgres schema and seeds demo data only if empty; find the key with
+`docker compose logs backend | grep "Demo API key"`.
+
+**Postgres vs SQLite trade-off:** local `npm run demo`/tests use SQLite for zero-setup; Docker
+uses Postgres for real concurrency/durability. One canonical `schema.prisma` drives both — the
+Postgres variant is generated (`npm run prisma:generate:pg`) by swapping only the datasource
+provider, so there is no schema drift. Enums are validated string columns to stay portable.
+
+<!-- Sections 4 (Framework middleware) and 5 (No-code) are added in their phases. -->

@@ -23,7 +23,18 @@ const scopeSchema = z.object({
 const messageSchema = z.object({ role: z.string(), content: z.string(), name: z.string().optional() });
 
 export async function registerRoutes(app: FastifyInstance) {
-  app.get('/health', async () => ({ ok: true }));
+  // Liveness: process is up.
+  app.get('/health', async () => ({ ok: true, service: 'tbm-backend' }));
+
+  // Readiness: dependencies (DB) reachable. Used by Docker/K8s health checks.
+  app.get('/ready', async (_req, reply) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      return { ready: true };
+    } catch (err) {
+      return reply.code(503).send({ ready: false, error: (err as Error).message });
+    }
+  });
 
   // Actionable approval link (no API key; verified by signed token). Lets a
   // Slack/email recipient approve or deny with one click.

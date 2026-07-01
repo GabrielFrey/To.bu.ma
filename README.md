@@ -231,14 +231,56 @@ encrypted, and leave `TBM_PROXY_UPSTREAM=openai` (default). For offline demos/te
 See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for the drop-in proxy, webhooks/notifications,
 Docker, framework middleware, and no-code connector guides.
 
+## Deploy with Docker
+
+One command brings up the whole stack — **backend + Postgres + dashboard**:
+
+```bash
+cp .env.example .env            # optional: edit MASTER_KEY / OPENAI_API_KEY
+docker compose up --build
+```
+
+- Dashboard: http://localhost:8080  (nginx serves the SPA and proxies `/v1` to the backend)
+- Backend API + proxy: http://localhost:4000  (liveness `GET /health`, readiness `GET /ready`)
+- Postgres: internal service `db` (data persisted in the `tbm_pgdata` volume)
+
+On first boot the backend applies the Postgres schema (`prisma db push`) and **seeds demo data
+only if the DB is empty** (idempotent), printing the demo API key `tbm_demo_local_key` in its
+logs. Get it anytime:
+
+```bash
+docker compose logs backend | grep "Demo API key"
+```
+
+By default the proxy uses the **offline mock upstream** (`TBM_PROXY_UPSTREAM=mock`) so the stack
+works with no external key. For real calls, set `TBM_PROXY_UPSTREAM=openai` and `OPENAI_API_KEY`
+in `.env`, then `docker compose up --build`.
+
+The Docker path runs **Postgres** (via a generated `schema.postgres.prisma`); local `npm run
+demo`/tests keep using **SQLite**. Both use the same canonical `schema.prisma` (only the
+datasource provider differs — see below).
+
+> Note: images build from `backend/Dockerfile` and `dashboard/Dockerfile`; `docker compose
+> config` validates the stack. (If your environment has no running Docker daemon, start Docker
+> Desktop / dockerd first.)
+
 ## Switching SQLite → PostgreSQL
 
-1. In `backend/prisma/schema.prisma` change `datasource db { provider = "postgresql" }`.
-2. Set `DATABASE_URL="postgresql://user:pass@host:5432/tbm"` in `.env`.
-3. `npx prisma migrate dev` (or `db push`) then `npm run db:setup`.
+There is **one canonical schema** (`backend/prisma/schema.prisma`, SQLite). A tiny generator
+produces a Postgres variant by swapping only the datasource provider, so the two never drift:
 
-The schema avoids Postgres-only types and models enums as validated string columns, so it runs
-unchanged on both engines.
+```bash
+cd backend
+export DATABASE_URL="postgresql://user:pass@host:5432/tbm?schema=public"
+npm run prisma:generate:pg      # writes prisma/schema.postgres.prisma + generates the PG client
+npm run db:setup:pg             # db push (PG) + seed
+npm run build && npm start
+```
+
+Docker does exactly this automatically (see [Deploy with Docker](#deploy-with-docker)). The
+schema avoids Postgres-only types and models enums as validated string columns, so it runs
+unchanged on both engines. To go back to SQLite locally: `npm run prisma:generate` (regenerates
+the SQLite client).
 
 ## Optimization features (Phase 6)
 

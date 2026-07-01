@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.local
+prisma/*.db
+prisma/*.db-journal
+prisma/schema.postgres.prisma
+*.log
+coverage

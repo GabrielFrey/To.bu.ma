@@ -5,6 +5,7 @@ dist/
 .DS_Store
 backend/prisma/*.db
 backend/prisma/*.db-journal
+backend/prisma/schema.postgres.prisma
 __pycache__/
 *.pyc
 .venv/
