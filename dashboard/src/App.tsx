@@ -67,6 +67,7 @@ export default function App() {
   const [expensive, setExpensive] = useState<ExpensivePrompt[]>([]);
   const [loops, setLoops] = useState<LoopRow[]>([]);
   const [recs, setRecs] = useState<Recommendation[]>([]);
+  const [savings, setSavings] = useState<import('./api').SavingsLedger | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [keyInput, setKeyInput] = useState(getApiKey());
   const [urlInput, setUrlInput] = useState(getBaseUrl());
@@ -74,12 +75,14 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [t, a, ts, b, w, bl, e, l, r] = await Promise.all([
+      const [t, a, ts, b, w, bl, e, l, r, sav] = await Promise.all([
         api.total(), api.byAgent(), api.byTask(), api.activeBudgets(),
         api.warnings(), api.blocked(), api.expensive(), api.loops(), api.recommendations(),
+        api.savingsLedger(),
       ]);
       setTotal(t); setAgents(a); setTasks(ts); setBudgets(b);
       setWarnings(w); setBlocked(bl); setExpensive(e); setLoops(l); setRecs(r);
+      setSavings(sav);
       setError(null);
       setLastUpdated(new Date());
     } catch (err) {
@@ -160,6 +163,30 @@ export default function App() {
               </div>
             ))}
           </div>
+        </Card>
+
+        {/* Savings ledger — flagship differentiator */}
+        <Card title="Savings ledger (counterfactual ROI)" className="lg:col-span-2">
+          {savings ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Stat label="estimated saved" value={usd(savings.totalSavedUsd)} sub={`${fmt(savings.totalSavedTokens)} tokens avoided`} />
+              <Stat label="blocked requests" value={String(savings.blockedRequests)} sub="hard stops" />
+              <Stat label="optimized" value={String(savings.optimizedRequests)} sub="degrade/compress" />
+              <div className="col-span-2 md:col-span-4">
+                {savings.byDecision.length === 0 ? (
+                  <p className="text-sm text-slate-400">No policy-driven savings recorded yet — run the demo to populate.</p>
+                ) : (
+                  <Table
+                    head={['Decision', 'Events', 'Saved $', 'Saved tokens']}
+                    rows={savings.byDecision.map((d) => [d.decision, String(d.count), usd(d.savedUsd), fmt(d.savedTokens)])}
+                  />
+                )}
+                <p className="text-xs text-slate-400 mt-2">{savings.note}</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">Loading…</p>
+          )}
         </Card>
 
         {/* Recommendations */}

@@ -9,11 +9,30 @@ into an existing agent in a few lines.
 
 > Not just monitoring — it enforces.
 
+## Why this beats X (honest positioning)
+
+TBM is **not** the only tool with hard budget blocks — [LiteLLM](https://docs.litellm.ai/docs/proxy/users), [Portkey](https://docs.portkey.ai/docs/product/administration/enforce-budget-and-rate-limit), [TrueFoundry](https://www.truefoundry.com/docs/ai-gateway/budgetlimiting), [costfuse](https://github.com/costfuse/costfuse), and [AgentBudget](https://github.com/AgentBudget/agentbudget) all stop overspend in various ways. TBM wins where **agentic spend governance** must be integrated:
+
+| vs | They lead on | TBM leads on |
+|---|---|---|
+| **Langfuse / Braintrust / HoneyHive / Datadog** | Trace depth, evals, infra correlation | **Pre-flight hard block** + policy actions, not alert-only dashboards |
+| **LiteLLM / Portkey / TrueFoundry** | Provider routing breadth, Redis scale | **8-level org→request hierarchy**, session/task budgets, **loop stop**, **run forecast**, **savings ledger** |
+| **costfuse / AgentBudget** | Zero-infra SDK drop-in | **Fleet proxy + dashboard + policy simulation + multi-tenant RBAC** |
+| **Stripe / Orb / Metronome** | Customer invoicing | **Internal agent enforcement** before tokens are spent |
+| **Galileo / Guardrails AI** | Safety/quality guardrails | **Dollar/token budgets** with counterfactual ROI |
+
+Full matrix and gap analysis: [`docs/COMPETITIVE_ANALYSIS.md`](docs/COMPETITIVE_ANALYSIS.md). Feature specs: [`docs/DIFFERENTIATION.md`](docs/DIFFERENTIATION.md).
+
+**Flagship differentiators (implemented):**
+- `POST /v1/forecast/run` — predict if a multi-step agent run will bust budget *before* step 1
+- `GET /v1/analytics/savings-ledger` — counterfactual $ saved by each policy decision
+- `POST /v1/policies/simulate` — dry-run policies against historical traffic
+
 ## Contents
 
 ```
 token-budget-manager/
-├── docs/            # ARCHITECTURE.md, DATA_MODEL.md, MVP.md
+├── docs/            # ARCHITECTURE.md, DATA_MODEL.md, MVP.md, COMPETITIVE_ANALYSIS.md, DIFFERENTIATION.md
 ├── backend/         # Fastify + Prisma API, engines, providers, tests, demo
 │   ├── src/         # config, db, crypto, tokenizer, pricing, services/, providers/, routes, server, seed, demo
 │   ├── prisma/      # schema.prisma (SQLite for MVP, Postgres-compatible)
@@ -62,7 +81,7 @@ The seeded demo API key is **`tbm_demo_local_key`** (owner role). The dashboard 
 ```bash
 cd backend
 npm run typecheck      # tsc --noEmit, must be clean
-npm test               # Vitest: 23 tests incl. Budget Engine + Token Accounting (acceptance criterion #7)
+npm test               # Vitest: budget engine, accounting, integration, differentiators
 ```
 
 Tests use an isolated `prisma/test.db` created fresh per run (see `tests/globalSetup.ts`).
@@ -216,6 +235,8 @@ encrypted, and leave `TBM_PROXY_UPSTREAM=openai` (default). For offline demos/te
 | `POST /budgets`, `PATCH /budgets/:id`, `GET /budgets` | manage budgets |
 | `POST /policies` | attach a condition→action policy to a budget |
 | `POST /check-budget` | **pre-request** forecast + decision + reservation |
+| `POST /forecast/run` | **run-level** multi-step overflow forecast (flagship) |
+| `POST /policies/simulate` | dry-run policies against historical traffic |
 | `POST /record-usage` | **post-request** actuals (idempotent) |
 | `POST /record-tool-usage` | account tool-call tokens |
 | `POST /llm/complete` | check → provider call → record in one shot |
@@ -226,7 +247,7 @@ encrypted, and leave `TBM_PROXY_UPSTREAM=openai` (default). For offline demos/te
 | `POST /webhooks`, `GET /webhooks`, `DELETE /webhooks/:id` | manage webhook/notification channels |
 | `POST /webhooks/test`, `GET /webhooks/:id/deliveries`, `GET /events` | test + inspect deliveries/event feed |
 | `POST /v1/chat/completions`, `/v1/completions`, `/v1/embeddings` | **drop-in proxy** (Bearer auth) |
-| `GET /analytics/{total,by-agent,by-task,by-project,active-budgets,warnings,blocked,expensive-prompts,loops,recommendations}` | dashboard data |
+| `GET /analytics/{total,by-agent,by-task,by-project,active-budgets,warnings,blocked,expensive-prompts,loops,recommendations,savings-ledger,cost-per-task}` | dashboard data |
 
 See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for the drop-in proxy, webhooks/notifications,
 Docker, framework middleware, and no-code connector guides.

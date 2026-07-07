@@ -44,6 +44,26 @@ export interface ExpensivePrompt { requestId: string; model: string; totalTokens
 export interface LoopRow { sessionId: string | null; signature: string | null; repeats: number; }
 export interface Recommendation { type: string; message: string; severity: 'info' | 'warn'; }
 
+export interface SavingsLedger {
+  totalSavedUsd: number;
+  totalSavedTokens: number;
+  blockedRequests: number;
+  optimizedRequests: number;
+  byDecision: { decision: string; count: number; savedUsd: number; savedTokens: number }[];
+  topReasons: { reason: string; savedUsd: number; count: number }[];
+  note: string;
+}
+
+export interface RunForecast {
+  projectedRunTokens: number;
+  projectedRunCostUsd: number;
+  willExceedHardLimit: boolean;
+  stepsUntilHardLimit: number;
+  recommendation: string;
+  reason: string;
+  limitingBudget: { name: string; level: string } | null;
+}
+
 export const api = {
   total: () => get<TotalSpend>('/v1/analytics/total'),
   byAgent: () => get<AgentSpend[]>('/v1/analytics/by-agent'),
@@ -55,4 +75,5 @@ export const api = {
   expensive: () => get<ExpensivePrompt[]>('/v1/analytics/expensive-prompts'),
   loops: () => get<LoopRow[]>('/v1/analytics/loops'),
   recommendations: () => get<Recommendation[]>('/v1/analytics/recommendations'),
+  savingsLedger: () => get<SavingsLedger>('/v1/analytics/savings-ledger'),
 };
