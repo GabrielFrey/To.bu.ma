@@ -8,6 +8,9 @@ import { recordUsage, recordToolUsage } from './services/accounting.js';
 import { getProvider } from './providers/index.js';
 import { decryptSecret } from './crypto.js';
 import * as analytics from './services/analytics.js';
+import { forecastRun } from './services/runForecast.js';
+import { computeSavingsLedger, costPerResolvedTask } from './services/savingsLedger.js';
+import { simulatePolicies } from './services/policySimulation.js';
 import { compressContextIfNeeded, chooseModel } from './services/optimization.js';
 import { emitEvent, EVENT_TYPES, verifyApprovalActionToken } from './services/events.js';
 import type { ScopeChain } from './types.js';
@@ -415,6 +418,57 @@ export async function registerRoutes(app: FastifyInstance) {
     v1.get('/analytics/expensive-prompts', async (req) => analytics.expensivePrompts(org(req)));
     v1.get('/analytics/loops', async (req) => analytics.inefficientLoops(org(req)));
     v1.get('/analytics/recommendations', async (req) => analytics.recommendations(org(req)));
+    v1.get('/analytics/savings-ledger', async (req) => computeSavingsLedger(org(req)));
+    v1.get('/analytics/cost-per-task', async (req) => costPerResolvedTask(org(req)));
+
+    // ---- Run-level forecast (flagship differentiator) ----
+    v1.post('/forecast/run', async (req, reply) => {
+      const body = z
+        .object({
+          model: z.string(),
+          estimatedSteps: z.number().int().positive(),
+          avgPromptTokens: z.number().int().min(0),
+          avgCompletionTokens: z.number().int().min(0),
+          toolCallsPerStep: z.number().int().min(0).optional(),
+          avgToolTokens: z.number().int().min(0).optional(),
+          scope: scopeSchema.optional(),
+        })
+        .parse(req.body);
+      const chain: ScopeChain = { organizationId: req.auth!.organizationId, ...body.scope };
+      const result = await forecastRun({ chain, ...body });
+      return reply.send(result);
+    });
+
+    // ---- Policy simulation / dry-run ----
+    v1.post('/policies/simulate', { preHandler: requireRole('admin') }, async (req, reply) => {
+      const body = z
+        .object({
+          budgetId: z.string().optional(),
+          hypotheticalPolicies: z.array(
+            z.object({
+              name: z.string(),
+              condition: z.string(),
+              action: z.enum([
+                'ALLOW', 'WARN', 'DEGRADE', 'COMPRESS', 'SUMMARIZE', 'TRUNCATE',
+                'REQUIRE_APPROVAL', 'STOP_AGENT', 'RETRY_LIMIT', 'TOOL_LIMIT',
+              ]),
+              priority: z.number().int().optional(),
+              params: z.record(z.unknown()).optional(),
+            })
+          ),
+          lookbackHours: z.number().int().positive().optional(),
+          sampleLimit: z.number().int().positive().max(5000).optional(),
+        })
+        .parse(req.body);
+      const result = await simulatePolicies({
+        organizationId: req.auth!.organizationId,
+        budgetId: body.budgetId,
+        hypotheticalPolicies: body.hypotheticalPolicies,
+        lookbackHours: body.lookbackHours,
+        sampleLimit: body.sampleLimit,
+      });
+      return reply.send(result);
+    });
 
     // ---- Directory helpers for the dashboard ----
     v1.get('/agents', async (req) => {

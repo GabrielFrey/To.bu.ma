@@ -126,6 +126,39 @@ async function main() {
   const recs = (await get('/v1/analytics/recommendations')).json();
   for (const r of recs) line(`  [${r.severity}] ${r.type}: ${r.message}`);
 
+  H('7) FLAGSHIP: Run-level predictive overflow forecast');
+  const forecast = await post('/v1/forecast/run', {
+    model: 'gpt-4o-mini',
+    estimatedSteps: 25,
+    avgPromptTokens: 600,
+    avgCompletionTokens: 200,
+    toolCallsPerStep: 1,
+    avgToolTokens: 40,
+    scope,
+  });
+  const fc = forecast.json();
+  line(`projected run: ${fc.projectedRunTokens} tokens / $${fc.projectedRunCostUsd} over ${fc.estimatedSteps} steps`);
+  line(`willExceed=${fc.willExceedHardLimit} stepsUntilLimit=${fc.stepsUntilHardLimit} recommendation=${fc.recommendation}`);
+  line(`reason: ${fc.reason}`);
+  if (fc.limitingBudget) line(`limiting budget: "${fc.limitingBudget.name}" (${fc.limitingBudget.level})`);
+
+  H('8) FLAGSHIP: Savings ledger (counterfactual ROI)');
+  const ledger = (await get('/v1/analytics/savings-ledger')).json();
+  line(`total saved (est): $${ledger.totalSavedUsd} / ${ledger.totalSavedTokens} tokens`);
+  line(`blocked=${ledger.blockedRequests} optimized=${ledger.optimizedRequests}`);
+  for (const row of ledger.byDecision ?? []) {
+    line(`  ${row.decision}: ${row.count} events, saved $${row.savedUsd}`);
+  }
+
+  H('9) Policy simulation dry-run (loop stop policy)');
+  const sim = await post('/v1/policies/simulate', {
+    hypotheticalPolicies: [{ name: 'sim loop stop', condition: 'loop', action: 'STOP_AGENT', priority: 10 }],
+    lookbackHours: 24,
+    sampleLimit: 200,
+  });
+  const simBody = sim.json();
+  line(`sample=${simBody.sampleSize} wouldBlock=${simBody.wouldBlock} projectedSavings=$${simBody.projectedSavingsUsd}`);
+
   await app.close();
   await prisma.$disconnect();
   line('\nDemo complete.');
