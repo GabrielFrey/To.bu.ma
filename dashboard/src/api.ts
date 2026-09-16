@@ -86,6 +86,19 @@ export const api = {
     if (!res.ok) throw new Error(`/v1/policy-packs/import → ${res.status}`);
     return res.json() as Promise<{ budgetsCreated: number; policiesCreated: number; packName: string }>;
   },
+  assistantTools: () => get<AssistantTools>('/v1/assistant/tools'),
+  assistantSpend: () => get<AssistantSpend>('/v1/assistant/spend'),
+  assistantConversations: () =>
+    get<{ id: string; title: string; createdAt: string; updatedAt: string }[]>(
+      '/v1/assistant/conversations'
+    ),
+  deleteAssistantConversation: async (id: string) => {
+    const res = await fetch(`${getBaseUrl()}/v1/assistant/conversations/${id}`, {
+      method: 'DELETE',
+      headers: { 'x-api-key': getApiKey() },
+    });
+    if (!res.ok) throw new Error(`delete conversation → ${res.status}`);
+  },
   downloadChargebackCsv: async (groupBy: 'agent' | 'task' | 'project' | 'user') => {
     const res = await fetch(`${getBaseUrl()}/v1/analytics/chargeback.csv?groupBy=${groupBy}`, {
       headers: { 'x-api-key': getApiKey() },
@@ -100,3 +113,140 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 };
+
+// --- assistant -----------------------------------------------------------
+
+export type Risk = 'read' | 'write' | 'destructive';
+
+export interface AssistantTools {
+  provider: string;
+  model: string;
+  alwaysConfirm: string[];
+  conditionallyConfirm: string[];
+  tools: {
+    name: string;
+    description: string;
+    risk: Risk;
+    confirmation: 'always' | 'conditional' | 'never';
+  }[];
+}
+
+export interface AssistantSpend {
+  agent: string;
+  paused: boolean;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  conversations: number;
+  toolCalls: number;
+  budget: {
+    id: string;
+    name: string;
+    metric: string;
+    hardLimit: number;
+    resetPeriod: string;
+    utilization: number;
+  } | null;
+}
+
+export interface ToolCallView {
+  id: string;
+  tool: string;
+  args: Record<string, unknown>;
+  risk: Risk;
+  status: string;
+  summary: string;
+  result?: unknown;
+  error?: string;
+  durationMs: number;
+  confirm?: { reason: string; confirmToken: string; expiresAt: string };
+}
+
+export interface UsageStep {
+  requestId: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  latencyMs: number;
+  decision: string;
+}
+
+export interface ChatTurnResponse {
+  conversationId: string;
+  reply: string;
+  toolCalls: ToolCallView[];
+  pendingConfirmations: ToolCallView[];
+  usage: { steps: UsageStep[]; inputTokens: number; outputTokens: number; costUsd: number };
+  blocked?: {
+    decision: string;
+    reason: string;
+    budgets: { name: string; level: string; utilization: number; hardLimit: number }[];
+  };
+  stoppedBecause: 'answered' | 'awaiting_confirmation' | 'budget_blocked' | 'step_limit';
+}
+
+export type StreamEvent =
+  | { type: 'conversation'; conversationId: string }
+  | { type: 'tool_call'; call: ToolCallView }
+  | { type: 'tool_result'; call: ToolCallView }
+  | { type: 'pending_confirmation'; call: ToolCallView }
+  | { type: 'usage'; step: UsageStep }
+  | { type: 'delta'; text: string }
+  | { type: 'blocked'; decision: string; reason: string }
+  | { type: 'done'; response: ChatTurnResponse }
+  | { type: 'error'; error: string };
+
+export interface ChatRequest {
+  conversationId?: string;
+  message?: string;
+  confirmations?: { toolCallId: string; confirmToken: string; approve?: boolean }[];
+}
+
+/**
+ * POST the turn and consume the SSE response. `EventSource` cannot be used here
+ * because it is GET-only and cannot carry the API key header, so the stream is
+ * read off `fetch` and framed by hand.
+ */
+export async function streamAssistantChat(
+  body: ChatRequest,
+  onEvent: (event: StreamEvent) => void,
+  signal?: AbortSignal
+): Promise<void> {
+  const res = await fetch(`${getBaseUrl()}/v1/assistant/chat/stream`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': getApiKey() },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.ok || !res.body) {
+    const detail = res.ok ? 'no response body' : `HTTP ${res.status}`;
+    throw new Error(`assistant chat failed (${detail})`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line; keep any partial tail.
+    const frames = buffer.split('\n\n');
+    buffer = frames.pop() ?? '';
+    for (const frame of frames) {
+      const data = frame
+        .split('\n')
+        .filter((l) => l.startsWith('data:'))
+        .map((l) => l.slice(5).trim())
+        .join('');
+      if (!data || data === '{}') continue;
+      try {
+        onEvent(JSON.parse(data) as StreamEvent);
+      } catch {
+        /* ignore a frame we cannot parse rather than killing the stream */
+      }
+    }
+  }
+}

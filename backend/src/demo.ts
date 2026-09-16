@@ -213,6 +213,13 @@ async function main() {
   line(`  stoppedBecause=${blocked.stoppedBecause} decision=${blocked.blocked?.decision}`);
   line(`  reply: ${blocked.reply}`);
   line(blocked.stoppedBecause === 'budget_blocked' ? '  PASS: the assistant is subject to its own product.' : '  FAIL: assistant escaped its budget!');
+  // Leave the seeded database usable: the dashboard's assistant tab is the next
+  // thing anyone opens after running the demo.
+  await prisma.budget.update({
+    where: { id: spend.budget.id },
+    data: { hardLimit: 200_000, resetPeriod: 'MONTHLY', softLimit: 160_000 },
+  });
+  line('  (budget restored so the dashboard demo still works)');
 
   line('\n-- 10h) Every tool call is in the audit log with tenant + actor');
   const auditLog = (await get('/v1/audit-log')).json();
