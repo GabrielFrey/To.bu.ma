@@ -44,11 +44,33 @@ async function ensureTask(sessionId: string, name: string) {
   return existing ?? prisma.task.create({ data: { sessionId, name } });
 }
 
+/**
+ * `X-TBM-User` carries whatever identifier the calling process has — usually an
+ * email, sometimes a username. Normalize to an email so the User row is unique
+ * per tenant and chargeback-by-user has a readable label.
+ */
+async function ensureUser(organizationId: string, identifier: string) {
+  const email = identifier.includes('@') ? identifier.toLowerCase() : `${identifier.toLowerCase()}@proxy.local`;
+  const existing = await prisma.user.findFirst({ where: { organizationId, email } });
+  return (
+    existing ??
+    prisma.user.create({
+      data: { organizationId, email, name: identifier, role: 'member' },
+    })
+  );
+}
+
 export async function resolveScopeFromHeaders(
   organizationId: string,
   headers: ProxyScopeHeaders
 ): Promise<ScopeChain> {
   const chain: ScopeChain = { organizationId };
+
+  // USER-level budgets and chargeback-by-user both key off this.
+  if (headers.user) {
+    const user = await ensureUser(organizationId, headers.user);
+    chain.userId = user.id;
+  }
 
   const needsProject = !!(headers.project || headers.agent || headers.session || headers.task);
   if (!needsProject) return chain;

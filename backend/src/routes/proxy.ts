@@ -134,6 +134,7 @@ async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: Upstr
   } catch (err) {
     await recordUsage({
       requestId: check.requestId!,
+      organizationId,
       usage: { inputTokens: check.forecast.promptTokens, outputTokens: 0 },
       status: 'failed',
     });
@@ -164,6 +165,7 @@ async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: Upstr
     // closing the socket so accounting is durable by the time the call returns.
     await recordUsage({
       requestId: check.requestId!,
+      organizationId,
       model: payload.model ?? model,
       usage: {
         inputTokens: usage?.prompt_tokens ?? check.forecast.promptTokens,
@@ -183,6 +185,7 @@ async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: Upstr
   if (!upstream.ok) {
     await recordUsage({
       requestId: check.requestId!,
+      organizationId,
       usage: { inputTokens: check.forecast.promptTokens, outputTokens: 0 },
       status: 'failed',
     });
@@ -192,6 +195,7 @@ async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: Upstr
   const u = usageFromResponse(kind, json);
   await recordUsage({
     requestId: check.requestId!,
+    organizationId,
     model: json.model ?? payload.model ?? model,
     usage: {
       inputTokens: u.present ? u.inputTokens : check.forecast.promptTokens,

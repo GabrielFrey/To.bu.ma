@@ -15,6 +15,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "demo": "tsx src/demo.ts"

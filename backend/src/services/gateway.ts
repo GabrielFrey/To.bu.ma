@@ -5,9 +5,9 @@ import { estimateTokens, type ChatMessage } from '../tokenizer.js';
 import { BLOCKING_DECISIONS, type Decision, type ScopeChain } from '../types.js';
 import { resolveBudgets, type BudgetStatus } from './budgetEngine.js';
 import { detectLoopSignals, requestSignature } from './loopDetection.js';
-import { evaluatePolicies, type PolicyDecision } from './policyEngine.js';
+import { evaluatePolicies, fallbackToDecision, type PolicyDecision } from './policyEngine.js';
 import { chooseModel } from './optimization.js';
-import { createReservation } from './accounting.js';
+import { blockReservation, createReservation } from './accounting.js';
 import { emitEvent, approvalLinks, type EventType } from './events.js';
 import { lookupPromptCache, type PromptCacheHint } from './promptCache.js';
 
@@ -41,8 +41,9 @@ export interface CheckBudgetResult {
 
 /**
  * Full pre-request gateway: estimate → resolve budgets → detect loops →
- * evaluate policies → create a reservation (or a blocked record). This is the
- * enforcement point that guarantees hard budgets cannot be exceeded.
+ * evaluate policies → reserve → verify. This is the enforcement point for hard
+ * budgets. The verify pass after the reservation is what makes the guarantee
+ * hold when several requests race for the same headroom.
  */
 export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetResult> {
   const provider = input.provider ?? 'mock';
@@ -77,7 +78,9 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
   // Is the agent paused?
   let agentPaused = false;
   if (input.chain.agentId) {
-    const agent = await prisma.agent.findUnique({ where: { id: input.chain.agentId } });
+    const agent = await prisma.agent.findFirst({
+      where: { id: input.chain.agentId, project: { organizationId: input.chain.organizationId } },
+    });
     agentPaused = agent?.status === 'paused';
   }
 
@@ -91,7 +94,8 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
     persist: true,
   });
 
-  const allowed = !policy.blocked;
+  let allowed = !policy.blocked;
+  let effective = policy;
 
   // Price-aware routing: cheapest model that still fits remaining budget.
   let recommendedModel: string | undefined;
@@ -124,14 +128,47 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
     status: allowed ? 'reserved' : 'blocked',
   });
 
+  // Reserve-then-verify: the row above is now counted in every applicable
+  // budget's `reserved` total, so re-reading with a zero projection yields the
+  // exact same arithmetic as the pre-check did for a single request — but under
+  // concurrency both racers now see each other and both step back rather than
+  // both proceeding on stale headroom. Failing closed is the correct direction
+  // for a spend guard.
+  let verifiedBudgets = budgets;
+  if (allowed) {
+    const recheck = await resolveBudgets(input.chain, 0, 0);
+    // Only a breach whose fallback actually blocks changes the outcome: a budget
+    // configured to DEGRADE was already handled (non-blocking) by the pre-check.
+    const breach = recheck.find(
+      (b) => b.exceedsHard && BLOCKING_DECISIONS.has(fallbackToDecision(b.fallbackBehavior))
+    );
+    if (breach) {
+      const decision = fallbackToDecision(breach.fallbackBehavior);
+      effective = {
+        decision,
+        blocked: true,
+        reason: `hard limit reached on "${breach.name}" (${breach.level}) by a concurrent request`,
+        budgetId: breach.budgetId,
+        utilization: breach.utilization,
+      };
+      allowed = false;
+      await blockReservation(reservation.id, decision);
+      // Merge the fresher totals so the caller sees why it lost the race.
+      verifiedBudgets = recheck.map((b) => ({
+        ...b,
+        projected: b.projected + (b.metric === 'COST_USD' ? estimatedCostUsd : reservedTokens),
+      }));
+    }
+  }
+
   // Create an approval record if required.
   let approvalId: string | undefined;
-  if (policy.decision === 'require-approval') {
+  if (effective.decision === 'require-approval') {
     const approval = await prisma.approval.create({
       data: {
         organizationId: input.chain.organizationId,
         requestId: reservation.id,
-        reason: policy.reason,
+        reason: effective.reason,
         status: 'pending',
       },
     });
@@ -140,13 +177,13 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
 
   // Fan out events (best-effort; drives webhooks + notifications). Mapped from
   // the effective decision + contributing budget.
-  await emitDecisionEvents(input.chain, policy, budgets, approvalId);
+  await emitDecisionEvents(input.chain, effective, verifiedBudgets, approvalId);
 
   return {
     requestId: reservation.id,
-    decision: policy.decision,
+    decision: effective.decision,
     allowed,
-    reason: policy.reason,
+    reason: effective.reason,
     forecast: {
       promptTokens,
       expectedCompletionTokens,
@@ -154,10 +191,10 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
       estimatedCostUsd,
       overflowRisk,
     },
-    budgets,
+    budgets: verifiedBudgets,
     recommendedModel,
     signals: { signatureRepeats: loop.signatureRepeats, failedAttempts: loop.failedAttempts },
-    policy,
+    policy: effective,
     promptCache,
   };
 }

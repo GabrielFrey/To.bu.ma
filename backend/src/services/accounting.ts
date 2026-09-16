@@ -5,12 +5,21 @@ import type { ScopeChain } from '../types.js';
 
 /**
  * Mark reservations older than TTL with no recorded usage as expired so they
- * no longer consume concurrent budget headroom.
+ * no longer consume concurrent budget headroom. Pass an `organizationId` on the
+ * request hot path so a single tenant's check never writes other tenants' rows;
+ * the background sweep in server.ts runs unscoped.
  */
-export async function expireStaleReservations(now = new Date()): Promise<number> {
+export async function expireStaleReservations(
+  opts: { organizationId?: string; now?: Date } = {}
+): Promise<number> {
+  const now = opts.now ?? new Date();
   const cutoff = new Date(now.getTime() - config.reservationTtlMs);
   const result = await prisma.llmRequest.updateMany({
-    where: { status: 'reserved', createdAt: { lt: cutoff } },
+    where: {
+      status: 'reserved',
+      createdAt: { lt: cutoff },
+      ...(opts.organizationId ? { organizationId: opts.organizationId } : {}),
+    },
     data: { status: 'expired' },
   });
   return result.count;
@@ -52,11 +61,37 @@ export async function createReservation(input: ReservationInput) {
   });
 }
 
+/**
+ * Demote an already-created reservation to `blocked`. Used by the gateway's
+ * reserve-then-verify pass when a concurrent request consumed the headroom this
+ * one was counting on.
+ */
+export async function blockReservation(requestId: string, decision: string) {
+  await prisma.llmRequest.update({
+    where: { id: requestId },
+    data: { status: 'blocked', decision },
+  });
+}
+
 export interface RecordUsageInput {
   requestId: string;
+  /**
+   * Tenant that owns the reservation. Required: without it any authenticated
+   * caller could finalize another organization's request and write usage into
+   * their tenant.
+   */
+  organizationId: string;
   model?: string;
   usage: UsageTokens;
   status?: 'completed' | 'failed';
+}
+
+export class UnknownRequestError extends Error {
+  statusCode = 404;
+  constructor(requestId: string) {
+    super(`Unknown request ${requestId}`);
+    this.name = 'UnknownRequestError';
+  }
 }
 
 /**
@@ -64,11 +99,14 @@ export interface RecordUsageInput {
  * call returns the existing usage row instead of double-counting.
  */
 export async function recordUsage(input: RecordUsageInput) {
-  const request = await prisma.llmRequest.findUnique({
-    where: { id: input.requestId },
+  // Prisma silently drops `undefined` filters, so a missing tenant would turn the
+  // ownership check below into a plain findFirst-by-id. Fail loudly instead.
+  if (!input.organizationId) throw new Error('recordUsage requires organizationId');
+  const request = await prisma.llmRequest.findFirst({
+    where: { id: input.requestId, organizationId: input.organizationId },
     include: { usage: true },
   });
-  if (!request) throw new Error(`Unknown request ${input.requestId}`);
+  if (!request) throw new UnknownRequestError(input.requestId);
   if (request.usage) return { request, usage: request.usage, idempotent: true };
 
   const model = input.model ?? request.model;

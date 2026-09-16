@@ -19,6 +19,8 @@ export const config = {
   retryThreshold: 3,
   // Public base URL used to build actionable approval links in notifications.
   publicUrl: process.env.TBM_PUBLIC_URL ?? `http://localhost:${Number(process.env.PORT ?? 4000)}`,
+  // Max accepted request body. Bounds the tokenizer work a single call can cause.
+  bodyLimitBytes: Number(process.env.TBM_BODY_LIMIT_BYTES ?? 4 * 1024 * 1024),
   // Outbound webhook delivery: retry with exponential backoff.
   webhookMaxAttempts: Number(process.env.TBM_WEBHOOK_MAX_ATTEMPTS ?? 5),
   webhookBackoffMs: Number(process.env.TBM_WEBHOOK_BACKOFF_MS ?? 1000),

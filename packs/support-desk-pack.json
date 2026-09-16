@@ -27,7 +27,7 @@
       "warningThreshold": 0.8,
       "resetPeriod": "NEVER",
       "priority": 6,
-      "fallbackBehavior": "COMPRESS",
+      "fallbackBehavior": "DEGRADE",
       "scopeHint": "taskId"
     }
   ],

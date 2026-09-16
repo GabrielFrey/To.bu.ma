@@ -1,0 +1,17 @@
+{
+  "name": "token-budget-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Control layer between agents and LLM APIs: budgets, policies, accounting, and an in-product AI assistant.",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix dashboard install",
+    "db:setup": "npm --prefix backend run db:setup",
+    "dev": "npm --prefix backend run dev",
+    "dev:dashboard": "npm --prefix dashboard run dev",
+    "demo": "npm --prefix backend run demo",
+    "test": "npm --prefix backend test",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix backend run typecheck:tests && npm --prefix dashboard run typecheck",
+    "build": "npm --prefix backend run build && npm --prefix dashboard run build",
+    "verify": "npm run typecheck && npm test && npm --prefix dashboard run build"
+  }
+}

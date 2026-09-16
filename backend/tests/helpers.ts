@@ -1,26 +1,7 @@
 import { prisma } from '../src/db.js';
+import { resetDatabase } from '../src/reset.js';
 
-export async function resetDb() {
-  await prisma.webhookDelivery.deleteMany();
-  await prisma.webhook.deleteMany();
-  await prisma.eventLog.deleteMany();
-  await prisma.tokenUsage.deleteMany();
-  await prisma.approval.deleteMany();
-  await prisma.policyEvent.deleteMany();
-  await prisma.llmRequest.deleteMany();
-  await prisma.budgetPolicy.deleteMany();
-  await prisma.budget.deleteMany();
-  await prisma.task.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.agent.deleteMany();
-  await prisma.project.deleteMany();
-  await prisma.modelPricing.deleteMany();
-  await prisma.providerKey.deleteMany();
-  await prisma.apiKey.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.auditLog.deleteMany();
-  await prisma.organization.deleteMany();
-}
+export const resetDb = resetDatabase;
 
 export async function makeOrgScope() {
   const org = await prisma.organization.create({ data: { name: 'Test Org' } });

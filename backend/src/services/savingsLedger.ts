@@ -1,5 +1,4 @@
 import { prisma } from '../db.js';
-import { estimateCost } from '../pricing.js';
 
 export interface SavingsByDecision {
   decision: string;
@@ -59,17 +58,6 @@ export async function computeSavingsLedger(organizationId: string): Promise<Savi
       // Completed with optimization but estimate heuristic: ~20% token reduction typical.
       savedUsd = req.estimatedCostUsd * 0.2;
       savedTokens = Math.round(req.reservedTokens * 0.2);
-      optimizedRequests++;
-    } else if (decision === 'degrade' && req.usage) {
-      // Try pricing delta if model changed vs a premium default in estimate.
-      const baseline = await estimateCost(
-        req.model.includes('mini') ? req.model.replace('-mini', '') : req.model,
-        req.promptTokens,
-        req.expectedCompletionTokens,
-        organizationId
-      );
-      savedUsd = Math.max(0, baseline - req.usage.costUsd);
-      savedTokens = 0;
       optimizedRequests++;
     }
 

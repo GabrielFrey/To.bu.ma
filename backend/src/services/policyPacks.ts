@@ -49,6 +49,25 @@ export interface PolicyPack {
 
 export type ScopeBindings = Partial<Record<keyof ScopeChain, string>>;
 
+const FALLBACK_BEHAVIORS = new Set<NonNullable<PolicyPackBudget['fallbackBehavior']>>([
+  'BLOCK',
+  'DEGRADE',
+  'SUMMARIZE',
+  'REQUIRE_APPROVAL',
+  'STOP_AGENT',
+]);
+
+const BUDGET_LEVELS = new Set<BudgetLevel>([
+  'ORGANIZATION',
+  'PROJECT',
+  'USER',
+  'AGENT',
+  'SESSION',
+  'TASK',
+  'TOOL_CALL',
+  'REQUEST',
+]);
+
 const POLICY_ACTIONS = new Set<PolicyPackPolicy['action']>([
   'ALLOW',
   'WARN',
@@ -92,7 +111,9 @@ export const SUPPORT_DESK_PACK: PolicyPack = {
       warningThreshold: 0.8,
       resetPeriod: 'NEVER',
       priority: 6,
-      fallbackBehavior: 'COMPRESS',
+      // Must stay a valid FallbackBehavior: unknown values fall through
+      // fallbackToDecision()'s default and become a hard stop-agent block.
+      fallbackBehavior: 'DEGRADE',
       scopeHint: 'taskId',
     },
   ],
@@ -230,6 +251,15 @@ export function parsePolicyPack(input: unknown): PolicyPack {
   for (const b of budgets) {
     if (!b?.name || !b.level || !b.metric || typeof b.hardLimit !== 'number') {
       throw new Error('each budget needs name, level, metric, hardLimit');
+    }
+    if (!BUDGET_LEVELS.has(b.level)) throw new Error(`budget "${b.name}" has unknown level "${b.level}"`);
+    if (b.metric !== 'TOKENS' && b.metric !== 'COST_USD') {
+      throw new Error(`budget "${b.name}" has unknown metric "${b.metric}"`);
+    }
+    // An unknown fallbackBehavior would silently become the most restrictive
+    // decision in the system, so reject it at the boundary instead.
+    if (b.fallbackBehavior != null && !FALLBACK_BEHAVIORS.has(b.fallbackBehavior)) {
+      throw new Error(`budget "${b.name}" has unknown fallbackBehavior "${b.fallbackBehavior}"`);
     }
   }
   for (const pol of policies) {

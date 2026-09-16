@@ -1,36 +1,14 @@
 import { prisma } from './db.js';
 import { buildServer } from './server.js';
+import { resetDatabase } from './reset.js';
 import { seed, DEMO_API_KEY } from './seed.js';
-
-/** Wipe all tables so the demo is repeatable. Order respects FKs. */
-async function resetDb() {
-  await prisma.webhookDelivery.deleteMany();
-  await prisma.webhook.deleteMany();
-  await prisma.eventLog.deleteMany();
-  await prisma.tokenUsage.deleteMany();
-  await prisma.approval.deleteMany();
-  await prisma.policyEvent.deleteMany();
-  await prisma.llmRequest.deleteMany();
-  await prisma.budgetPolicy.deleteMany();
-  await prisma.budget.deleteMany();
-  await prisma.task.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.agent.deleteMany();
-  await prisma.project.deleteMany();
-  await prisma.modelPricing.deleteMany();
-  await prisma.providerKey.deleteMany();
-  await prisma.apiKey.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.auditLog.deleteMany();
-  await prisma.organization.deleteMany();
-}
 
 const line = (s = '') => console.log(s);
 const H = (s: string) => console.log(`\n=== ${s} ===`);
 
 async function main() {
   H('Setup: reset + seed');
-  await resetDb();
+  await resetDatabase();
   const { agent, session, task } = await seed();
   line(`agent=${agent.id} session=${session.id} task=${task.id}`);
 

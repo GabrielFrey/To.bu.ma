@@ -98,7 +98,7 @@ export function chargebackToCsv(rows: ChargebackRow[]): string {
   const lines = rows.map((r) =>
     [r.dimension, csvEscape(r.id), csvEscape(r.name), r.totalTokens, r.costUsd.toFixed(6), r.requests].join(',')
   );
-  return [header, ...lines].join('\n') + (lines.length ? '\n' : '\n');
+  return [header, ...lines].join('\n') + '\n';
 }
 
 export async function exportChargebackCsv(

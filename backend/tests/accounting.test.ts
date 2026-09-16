@@ -40,6 +40,7 @@ describe('Token Accounting Service', () => {
     });
     const { usage, idempotent } = await recordUsage({
       requestId: res.id,
+      organizationId: org.id,
       usage: { inputTokens: 100, outputTokens: 40, cachedTokens: 0, toolTokens: 0 },
     });
     expect(idempotent).toBe(false);
@@ -57,8 +58,8 @@ describe('Token Accounting Service', () => {
       expectedCompletionTokens: 10, reservedTokens: 22, estimatedCostUsd: 0,
       signature: 'sig', decision: 'allow', status: 'reserved',
     });
-    const first = await recordUsage({ requestId: res.id, usage: { inputTokens: 10, outputTokens: 10 } });
-    const second = await recordUsage({ requestId: res.id, usage: { inputTokens: 999, outputTokens: 999 } });
+    const first = await recordUsage({ requestId: res.id, organizationId: org.id, usage: { inputTokens: 10, outputTokens: 10 } });
+    const second = await recordUsage({ requestId: res.id, organizationId: org.id, usage: { inputTokens: 999, outputTokens: 999 } });
     expect(first.idempotent).toBe(false);
     expect(second.idempotent).toBe(true);
     expect(second.usage.totalTokens).toBe(first.usage.totalTokens);
@@ -67,7 +68,7 @@ describe('Token Accounting Service', () => {
   });
 
   it('captures input/output/cached/tool token dimensions', async () => {
-    const { chain } = await makeOrgScope();
+    const { org, chain } = await makeOrgScope();
     const res = await createReservation({
       chain, model: 'gpt-4o-mini', provider: 'mock', promptTokens: 100,
       expectedCompletionTokens: 50, reservedTokens: 155, estimatedCostUsd: 0,
@@ -75,6 +76,7 @@ describe('Token Accounting Service', () => {
     });
     const { usage } = await recordUsage({
       requestId: res.id,
+      organizationId: org.id,
       usage: { inputTokens: 100, outputTokens: 50, cachedTokens: 30, toolTokens: 12 },
     });
     expect(usage.inputTokens).toBe(100);
@@ -93,13 +95,13 @@ describe('Token Accounting Service', () => {
   });
 
   it('marks failed status when recording a failure', async () => {
-    const { chain } = await makeOrgScope();
+    const { org, chain } = await makeOrgScope();
     const res = await createReservation({
       chain, model: 'gpt-4o-mini', provider: 'mock', promptTokens: 10,
       expectedCompletionTokens: 10, reservedTokens: 22, estimatedCostUsd: 0,
       signature: 'sig', decision: 'allow', status: 'reserved',
     });
-    await recordUsage({ requestId: res.id, usage: { inputTokens: 10, outputTokens: 0 }, status: 'failed' });
+    await recordUsage({ requestId: res.id, organizationId: org.id, usage: { inputTokens: 10, outputTokens: 0 }, status: 'failed' });
     const req = await prisma.llmRequest.findUnique({ where: { id: res.id } });
     expect(req?.status).toBe('failed');
   });

@@ -49,11 +49,21 @@ export function resetWindowStart(period: string, now = new Date()): Date | null 
   }
 }
 
-/** Build the where-filter that maps a budget's (level, scopeId) onto usage rows. */
+/**
+ * REQUEST-level budgets cap a single call, so they never aggregate history:
+ * `used` and `reserved` are zero and only the incoming projection is compared
+ * against the limit.
+ */
+const PER_CALL_LEVELS: ReadonlySet<string> = new Set(['REQUEST']);
+
+/**
+ * Build the where-filter that maps a budget's (level, scopeId) onto usage rows.
+ * `TokenUsage` has no `userId` column, so USER-level budgets filter through the
+ * owning request. TOOL_CALL narrows the summed field rather than the row set
+ * (see `usageSumField`).
+ */
 function scopeFilter(level: string, scopeId: string | null, chain: ScopeChain) {
   switch (level) {
-    case 'ORGANIZATION':
-      return { organizationId: chain.organizationId };
     case 'PROJECT':
       return { projectId: scopeId ?? chain.projectId ?? '__none__' };
     case 'AGENT':
@@ -63,11 +73,18 @@ function scopeFilter(level: string, scopeId: string | null, chain: ScopeChain) {
     case 'TASK':
       return { taskId: scopeId ?? chain.taskId ?? '__none__' };
     case 'USER':
+      return { request: { userId: scopeId ?? chain.userId ?? '__none__' } };
+    case 'ORGANIZATION':
     case 'TOOL_CALL':
-    case 'REQUEST':
     default:
       return { organizationId: chain.organizationId };
   }
+}
+
+/** Same mapping against `LlmRequest`, which owns `userId` directly. */
+function reservationScopeFilter(level: string, scopeId: string | null, chain: ScopeChain) {
+  if (level === 'USER') return { userId: scopeId ?? chain.userId ?? '__none__' };
+  return scopeFilter(level, scopeId, chain);
 }
 
 /** Does this budget apply to the given scope chain? */
@@ -97,6 +114,7 @@ async function computeUsed(
   metric: string,
   windowStart: Date | null
 ): Promise<number> {
+  if (PER_CALL_LEVELS.has(level)) return 0;
   const where: Record<string, unknown> = {
     organizationId: chain.organizationId,
     ...scopeFilter(level, scopeId, chain),
@@ -104,9 +122,12 @@ async function computeUsed(
   if (windowStart) where.createdAt = { gte: windowStart };
   const agg = await prisma.tokenUsage.aggregate({
     where,
-    _sum: { totalTokens: true, costUsd: true },
+    _sum: { totalTokens: true, toolTokens: true, costUsd: true },
   });
-  return metric === 'COST_USD' ? agg._sum.costUsd ?? 0 : agg._sum.totalTokens ?? 0;
+  if (metric === 'COST_USD') return agg._sum.costUsd ?? 0;
+  // A TOOL_CALL budget caps tool-call tokens, not the whole conversation.
+  if (level === 'TOOL_CALL') return agg._sum.toolTokens ?? 0;
+  return agg._sum.totalTokens ?? 0;
 }
 
 async function computeReserved(
@@ -115,12 +136,15 @@ async function computeReserved(
   chain: ScopeChain,
   metric: string
 ): Promise<number> {
+  // Reservations are recorded per LLM call and carry no tool-token breakdown, so
+  // per-call and tool-call budgets have nothing outstanding to count.
+  if (PER_CALL_LEVELS.has(level) || level === 'TOOL_CALL') return 0;
   const cutoff = new Date(Date.now() - config.reservationTtlMs);
   const where: Record<string, unknown> = {
     organizationId: chain.organizationId,
     status: 'reserved',
     createdAt: { gte: cutoff },
-    ...scopeFilter(level, scopeId, chain),
+    ...reservationScopeFilter(level, scopeId, chain),
   };
   const agg = await prisma.llmRequest.aggregate({
     where,
@@ -138,39 +162,41 @@ export async function resolveBudgets(
   projectedTokens: number,
   projectedCost: number
 ): Promise<BudgetStatus[]> {
-  await expireStaleReservations();
+  await expireStaleReservations({ organizationId: chain.organizationId });
   const budgets = await prisma.budget.findMany({
     where: { organizationId: chain.organizationId, active: true },
   });
 
-  const statuses: BudgetStatus[] = [];
-  for (const b of budgets) {
-    if (!budgetApplies(b.level, b.scopeId, chain)) continue;
-    const windowStart = resetWindowStart(b.resetPeriod);
-    const used = await computeUsed(b.level, b.scopeId, chain, b.metric, windowStart);
-    const reserved = await computeReserved(b.level, b.scopeId, chain, b.metric);
-    const projectedAmount = b.metric === 'COST_USD' ? projectedCost : projectedTokens;
-    const projected = used + reserved + projectedAmount;
-    const utilization = b.hardLimit > 0 ? projected / b.hardLimit : 0;
-    statuses.push({
-      budgetId: b.id,
-      name: b.name,
-      level: b.level as BudgetLevel,
-      metric: b.metric as 'TOKENS' | 'COST_USD',
-      hardLimit: b.hardLimit,
-      softLimit: b.softLimit,
-      warningThreshold: b.warningThreshold,
-      priority: b.priority,
-      fallbackBehavior: b.fallbackBehavior,
-      used,
-      reserved,
-      projected,
-      remaining: Math.max(0, b.hardLimit - (used + reserved)),
-      utilization,
-      exceedsHard: projected > b.hardLimit,
-      exceedsSoft: b.softLimit != null && projected > b.softLimit,
-      atWarning: projected > b.warningThreshold * b.hardLimit,
-    });
-  }
-  return statuses;
+  const applicable = budgets.filter((b) => budgetApplies(b.level, b.scopeId, chain));
+  // Two aggregates per budget: issue them concurrently rather than serially.
+  return Promise.all(
+    applicable.map(async (b) => {
+      const windowStart = resetWindowStart(b.resetPeriod);
+      const [used, reserved] = await Promise.all([
+        computeUsed(b.level, b.scopeId, chain, b.metric, windowStart),
+        computeReserved(b.level, b.scopeId, chain, b.metric),
+      ]);
+      const projectedAmount = b.metric === 'COST_USD' ? projectedCost : projectedTokens;
+      const projected = used + reserved + projectedAmount;
+      return {
+        budgetId: b.id,
+        name: b.name,
+        level: b.level as BudgetLevel,
+        metric: b.metric as 'TOKENS' | 'COST_USD',
+        hardLimit: b.hardLimit,
+        softLimit: b.softLimit,
+        warningThreshold: b.warningThreshold,
+        priority: b.priority,
+        fallbackBehavior: b.fallbackBehavior,
+        used,
+        reserved,
+        projected,
+        remaining: Math.max(0, b.hardLimit - (used + reserved)),
+        utilization: b.hardLimit > 0 ? projected / b.hardLimit : 0,
+        exceedsHard: projected > b.hardLimit,
+        exceedsSoft: b.softLimit != null && projected > b.softLimit,
+        atWarning: projected > b.warningThreshold * b.hardLimit,
+      } satisfies BudgetStatus;
+    })
+  );
 }

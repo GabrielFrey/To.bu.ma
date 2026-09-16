@@ -19,7 +19,7 @@ export interface PolicyDecision {
   params?: Record<string, unknown>;
 }
 
-function fallbackToDecision(fallback: string): Decision {
+export function fallbackToDecision(fallback: string): Decision {
   switch (fallback) {
     case 'DEGRADE':
       return 'degrade';
@@ -39,11 +39,19 @@ function stronger(a: PolicyDecision, b: PolicyDecision): PolicyDecision {
   return DECISION_STRENGTH[b.decision] > DECISION_STRENGTH[a.decision] ? b : a;
 }
 
-/** Evaluate a data-driven condition string against the runtime signals. */
-function conditionMatches(
-  condition: string,
-  ctx: { utilization: number; loop: LoopSignals; toolCalls: number; requestCost: number }
-): boolean {
+export interface ConditionContext {
+  utilization: number;
+  loop: LoopSignals;
+  toolCalls: number;
+  requestCost: number;
+}
+
+/**
+ * Evaluate a data-driven condition string against the runtime signals. Exported
+ * so policy *simulation* uses the identical matcher as enforcement — a dry-run
+ * that disagrees with production is worse than no dry-run.
+ */
+export function conditionMatches(condition: string, ctx: ConditionContext): boolean {
   const c = condition.trim().toLowerCase();
   if (c === 'loop') return ctx.loop.isLoop;
   const m = c.match(/^(utilization|retries|toolcalls|requestcost)\s*(>=|>|<=|<)\s*([\d.]+)$/);

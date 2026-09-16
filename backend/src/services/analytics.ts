@@ -122,7 +122,6 @@ export async function expensivePrompts(organizationId: string) {
     where: { organizationId },
     orderBy: { costUsd: 'desc' },
     take: 10,
-    include: { request: { select: { model: true, decision: true, agentId: true, taskId: true } } },
   });
   return rows.map((r) => ({
     requestId: r.requestId,

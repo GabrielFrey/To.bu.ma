@@ -3,25 +3,45 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { ZodError } from 'zod';
 import { config } from './config.js';
-import { registerRoutes } from './routes.js';
+import { registerRoutes } from './routes/index.js';
 import { registerProxyRoutes } from './routes/proxy.js';
 import { expireStaleReservations } from './services/accounting.js';
 
+/** Rate-limit bucket: the caller's key however they sent it, else their IP. */
+function rateLimitKey(req: { headers: Record<string, unknown>; ip: string }): string {
+  const apiKey = req.headers['x-api-key'];
+  if (typeof apiKey === 'string' && apiKey) return apiKey;
+  const authz = req.headers['authorization'];
+  if (typeof authz === 'string' && authz.toLowerCase().startsWith('bearer ')) return authz.slice(7).trim();
+  return req.ip;
+}
+
 export async function buildServer() {
-  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
+  const app = Fastify({
+    logger: { level: process.env.LOG_LEVEL ?? 'info' },
+    bodyLimit: config.bodyLimitBytes,
+  });
 
   await app.register(cors, { origin: true });
   await app.register(rateLimit, {
     max: 300,
     timeWindow: '1 minute',
-    keyGenerator: (req) => (req.headers['x-api-key'] as string) ?? req.ip,
+    keyGenerator: (req) => rateLimitKey(req as never),
   });
 
-  app.setErrorHandler((err, _req, reply) => {
+  app.setErrorHandler((err, req, reply) => {
     if (err instanceof ZodError) {
       return reply.code(400).send({ error: 'validation', issues: err.issues });
     }
-    reply.code(err.statusCode ?? 500).send({ error: err.message });
+    const status = err.statusCode ?? 500;
+    // Deliberate 4xx messages are part of the API contract. Unexpected 5xx text
+    // is not: Prisma errors name tables and columns, and "unknown request <id>"
+    // is a tenant-existence oracle. Log it, return something generic.
+    if (status >= 500) {
+      req.log.error({ err }, 'unhandled error');
+      return reply.code(status).send({ error: 'internal error' });
+    }
+    reply.code(status).send({ error: err.message });
   });
 
   await registerRoutes(app);

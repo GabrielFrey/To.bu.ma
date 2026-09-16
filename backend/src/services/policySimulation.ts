@@ -1,7 +1,7 @@
 import { prisma } from '../db.js';
 import { resolveBudgets } from './budgetEngine.js';
 import { detectLoopSignals } from './loopDetection.js';
-import { evaluatePolicies } from './policyEngine.js';
+import { conditionMatches, evaluatePolicies } from './policyEngine.js';
 import { config } from '../config.js';
 import type { ScopeChain } from '../types.js';
 
@@ -84,18 +84,6 @@ export async function simulatePolicies(input: SimulationInput): Promise<Simulati
       retryThreshold: config.retryThreshold,
     });
 
-    // Inject hypothetical policies as if attached to the first applicable budget.
-    const targetBudgetId = input.budgetId ?? budgets[0]?.budgetId;
-    if (targetBudgetId && input.hypotheticalPolicies.length > 0) {
-      // Temporarily create in-memory evaluation by attaching synthetic policies via evaluatePolicies
-      // after merging with DB policies — we pass custom conditions through loop/cost signals.
-      for (const hp of input.hypotheticalPolicies) {
-        if (hp.condition.trim().toLowerCase() === 'loop' && loop.isLoop) {
-          // Synthetic match handled below via evaluatePolicies + manual override check
-        }
-      }
-    }
-
     const policy = await evaluatePolicies({
       chain,
       budgets,
@@ -104,24 +92,23 @@ export async function simulatePolicies(input: SimulationInput): Promise<Simulati
       persist: false,
     });
 
-    // Re-evaluate with hypothetical policies overlaid (strongest wins).
+    // Overlay the hypothetical policies (last match wins) using the *same*
+    // matcher the enforcement path uses, so a dry-run cannot disagree with what
+    // production would decide.
     let simulatedDecision = policy.decision;
     let simulatedBlocked = policy.blocked;
+    const targetBudget = input.budgetId
+      ? budgets.find((b) => b.budgetId === input.budgetId)
+      : budgets[0];
     for (const hp of input.hypotheticalPolicies) {
-      const cond = hp.condition.trim().toLowerCase();
-      let matches = false;
-      if (cond === 'loop') matches = loop.isLoop;
-      else if (cond.startsWith('utilization')) {
-        const m = cond.match(/utilization\s*(>=|>)\s*([\d.]+)/);
-        if (m) {
-          const util = budgets[0]?.utilization ?? 0;
-          matches = m[1] === '>=' ? util >= Number(m[2]) : util > Number(m[2]);
-        }
-      } else if (cond.startsWith('requestcost')) {
-        const m = cond.match(/requestcost\s*(>=|>)\s*([\d.]+)/);
-        if (m) matches = req.estimatedCostUsd >= Number(m[2]);
-      }
-
+      const matches = conditionMatches(hp.condition, {
+        utilization: targetBudget?.utilization ?? 0,
+        loop,
+        // Per-request tool-call counts are not persisted, so `toolCalls` conditions
+        // cannot be replayed. Reported in `note` rather than silently mismatching.
+        toolCalls: 0,
+        requestCost: req.estimatedCostUsd,
+      });
       if (matches) {
         const action = hp.action.toLowerCase().replace(/_/g, '-');
         simulatedDecision = action as typeof simulatedDecision;
@@ -163,6 +150,9 @@ export async function simulatePolicies(input: SimulationInput): Promise<Simulati
     wouldBlock,
     projectedSavingsUsd: Number(projectedSavingsUsd.toFixed(6)),
     examples,
-    note: 'Simulation replays historical requests; does not persist policy_events or modify budgets.',
+    note:
+      'Simulation replays historical requests through the production policy matcher; it does not ' +
+      'persist policy_events or modify budgets. `toolCalls` conditions always evaluate as 0 because ' +
+      'per-request tool-call counts are not stored.',
   };
 }

@@ -141,7 +141,7 @@ describe('Prompt cache hint', () => {
       decision: 'allow',
       status: 'reserved',
     });
-    await recordUsage({ requestId: res.id, usage: { inputTokens: 20, outputTokens: 8 } });
+    await recordUsage({ requestId: res.id, organizationId: org.id, usage: { inputTokens: 20, outputTokens: 8 } });
     const hint = await lookupPromptCache({ organizationId: org.id, signature });
     expect(hint.hit).toBe(true);
     expect(hint.priorRequestId).toBe(res.id);
@@ -205,7 +205,7 @@ describe('Chargeback CSV + HTTP surfaces', () => {
       decision: 'allow',
       status: 'reserved',
     });
-    await recordUsage({ requestId: res.id, usage: { inputTokens: 50, outputTokens: 10 } });
+    await recordUsage({ requestId: res.id, organizationId: org.id, usage: { inputTokens: 50, outputTokens: 10 } });
     const rows = await chargebackReport(org.id, 'agent');
     expect(rows[0].id).toBe(agent.id);
     expect(rows[0].totalTokens).toBe(60);
