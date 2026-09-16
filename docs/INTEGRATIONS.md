@@ -27,7 +27,11 @@ attempt.
 
 ### Events
 `soft_limit_crossed`, `warning_threshold`, `hard_limit_blocked`, `approval_required`,
-`approval_resolved`, `loop_stopped`, `agent_paused`, `agent_resumed`.
+`approval_resolved`, `loop_stopped`, `agent_paused`, `agent_resumed`,
+**`call_blocked`** (every blocking decision), **`call_degraded`** (degrade/compress/summarize/truncate).
+
+Subscribe to `call_blocked` + `call_degraded` when you want a webhook on every blocked or
+optimized call (ticket queue, Slack, SAP Event Mesh) without enumerating the specific reasons.
 
 ### Channel kinds
 - `generic` / `http` — POST a **signed JSON envelope** `{ id, type, createdAt, data }` with

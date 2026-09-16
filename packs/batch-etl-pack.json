@@ -1,0 +1,71 @@
+{
+  "kind": "tbm-policy-pack",
+  "version": 1,
+  "id": "batch-etl-pack",
+  "name": "Batch ETL",
+  "description": "Project-level daily spend guard for overnight classification / extraction jobs, with tool-call and retry limits.",
+  "process": "batch-etl",
+  "budgets": [
+    {
+      "name": "ETL project daily USD",
+      "level": "PROJECT",
+      "metric": "COST_USD",
+      "hardLimit": 200,
+      "softLimit": 150,
+      "warningThreshold": 0.8,
+      "resetPeriod": "DAILY",
+      "priority": 9,
+      "fallbackBehavior": "BLOCK",
+      "scopeHint": "projectId"
+    },
+    {
+      "name": "ETL agent hourly tokens",
+      "level": "AGENT",
+      "metric": "TOKENS",
+      "hardLimit": 250000,
+      "softLimit": 200000,
+      "warningThreshold": 0.85,
+      "resetPeriod": "HOURLY",
+      "priority": 7,
+      "fallbackBehavior": "DEGRADE",
+      "scopeHint": "agentId"
+    }
+  ],
+  "policies": [
+    {
+      "budgetName": "ETL project daily USD",
+      "name": "Warn finance at 80%",
+      "condition": "utilization>=0.8",
+      "action": "WARN",
+      "priority": 3
+    },
+    {
+      "budgetName": "ETL agent hourly tokens",
+      "name": "Degrade to cheaper model under load",
+      "condition": "utilization>=0.85",
+      "action": "DEGRADE",
+      "priority": 6
+    },
+    {
+      "budgetName": "ETL agent hourly tokens",
+      "name": "Stop runaway tool spirals",
+      "condition": "toolCalls>=40",
+      "action": "TOOL_LIMIT",
+      "priority": 10
+    },
+    {
+      "budgetName": "ETL agent hourly tokens",
+      "name": "Stop identical-row loops",
+      "condition": "loop",
+      "action": "STOP_AGENT",
+      "priority": 10
+    },
+    {
+      "budgetName": "ETL project daily USD",
+      "name": "Require approval for expensive single calls",
+      "condition": "requestCost>=1.5",
+      "action": "REQUIRE_APPROVAL",
+      "priority": 8
+    }
+  ]
+}

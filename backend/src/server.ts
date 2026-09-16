@@ -5,6 +5,7 @@ import { ZodError } from 'zod';
 import { config } from './config.js';
 import { registerRoutes } from './routes.js';
 import { registerProxyRoutes } from './routes/proxy.js';
+import { expireStaleReservations } from './services/accounting.js';
 
 export async function buildServer() {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
@@ -33,7 +34,16 @@ const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}
 if (isMain) {
   buildServer()
     .then((app) => app.listen({ port: config.port, host: '0.0.0.0' }))
-    .then((addr) => console.log(`TBM backend listening on ${addr}`))
+    .then((addr) => {
+      console.log(`TBM backend listening on ${addr}`);
+      const intervalMs = Math.max(30_000, Math.floor(config.reservationTtlMs / 2));
+      const timer = setInterval(() => {
+        expireStaleReservations().catch((err) => {
+          console.error('reservation TTL sweep failed', err);
+        });
+      }, intervalMs);
+      if (typeof timer.unref === 'function') timer.unref();
+    })
     .catch((err) => {
       console.error(err);
       process.exit(1);

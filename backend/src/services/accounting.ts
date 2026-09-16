@@ -1,6 +1,20 @@
 import { prisma } from '../db.js';
+import { config } from '../config.js';
 import { computeCost, type UsageTokens } from '../pricing.js';
 import type { ScopeChain } from '../types.js';
+
+/**
+ * Mark reservations older than TTL with no recorded usage as expired so they
+ * no longer consume concurrent budget headroom.
+ */
+export async function expireStaleReservations(now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - config.reservationTtlMs);
+  const result = await prisma.llmRequest.updateMany({
+    where: { status: 'reserved', createdAt: { lt: cutoff } },
+    data: { status: 'expired' },
+  });
+  return result.count;
+}
 
 export interface ReservationInput {
   chain: ScopeChain;

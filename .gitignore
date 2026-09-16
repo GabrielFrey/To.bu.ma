@@ -2,7 +2,10 @@ node_modules/
 dist/
 *.log
 .env
+.env.local
 .DS_Store
+*.db
+*.db-journal
 backend/prisma/*.db
 backend/prisma/*.db-journal
 backend/prisma/schema.postgres.prisma

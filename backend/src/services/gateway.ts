@@ -2,13 +2,14 @@ import { config } from '../config.js';
 import { prisma } from '../db.js';
 import { estimateCost } from '../pricing.js';
 import { estimateTokens, type ChatMessage } from '../tokenizer.js';
-import type { Decision, ScopeChain } from '../types.js';
+import { BLOCKING_DECISIONS, type Decision, type ScopeChain } from '../types.js';
 import { resolveBudgets, type BudgetStatus } from './budgetEngine.js';
 import { detectLoopSignals, requestSignature } from './loopDetection.js';
 import { evaluatePolicies, type PolicyDecision } from './policyEngine.js';
 import { chooseModel } from './optimization.js';
 import { createReservation } from './accounting.js';
 import { emitEvent, approvalLinks, type EventType } from './events.js';
+import { lookupPromptCache, type PromptCacheHint } from './promptCache.js';
 
 export interface CheckBudgetInput {
   chain: ScopeChain;
@@ -35,6 +36,7 @@ export interface CheckBudgetResult {
   recommendedModel?: string;
   signals: { signatureRepeats: number; failedAttempts: number };
   policy: PolicyDecision;
+  promptCache: PromptCacheHint;
 }
 
 /**
@@ -60,6 +62,10 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
   const overflowRisk = budgets.some((b) => b.exceedsHard);
 
   const signature = requestSignature(input.messages, input.model);
+  const promptCache = await lookupPromptCache({
+    organizationId: input.chain.organizationId,
+    signature,
+  });
   const loop = await detectLoopSignals({
     sessionId: input.chain.sessionId,
     taskId: input.chain.taskId,
@@ -87,14 +93,18 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
 
   const allowed = !policy.blocked;
 
-  // Recommend a cheaper model when degrading/compressing.
+  // Price-aware routing: cheapest model that still fits remaining budget.
   let recommendedModel: string | undefined;
-  if (['degrade', 'compress', 'summarize'].includes(policy.decision)) {
+  const remaining = remainingCaps(budgets);
+  if (['degrade', 'compress', 'summarize'].includes(policy.decision) || overflowRisk) {
     const c = await chooseModel({
       requestedModel: input.model,
       promptTokens,
+      expectedCompletionTokens,
       organizationId: input.chain.organizationId,
       preferCheaper: true,
+      remainingBudgetUsd: remaining.remainingBudgetUsd,
+      remainingBudgetTokens: remaining.remainingBudgetTokens,
     });
     if (c.model !== input.model) recommendedModel = c.model;
   }
@@ -148,7 +158,26 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
     recommendedModel,
     signals: { signatureRepeats: loop.signatureRepeats, failedAttempts: loop.failedAttempts },
     policy,
+    promptCache,
   };
+}
+
+function remainingCaps(budgets: BudgetStatus[]): {
+  remainingBudgetUsd?: number;
+  remainingBudgetTokens?: number;
+} {
+  let remainingBudgetUsd: number | undefined;
+  let remainingBudgetTokens: number | undefined;
+  for (const b of budgets) {
+    if (b.metric === 'COST_USD') {
+      remainingBudgetUsd =
+        remainingBudgetUsd == null ? b.remaining : Math.min(remainingBudgetUsd, b.remaining);
+    } else {
+      remainingBudgetTokens =
+        remainingBudgetTokens == null ? b.remaining : Math.min(remainingBudgetTokens, b.remaining);
+    }
+  }
+  return { remainingBudgetUsd, remainingBudgetTokens };
 }
 
 /** Translate a policy decision into an emitted event (for webhooks/notifications). */
@@ -162,6 +191,13 @@ async function emitDecisionEvents(
   const budgetName = budget?.name ?? 'budget';
   const emit = (type: EventType, data: Record<string, unknown>) =>
     emitEvent({ organizationId: chain.organizationId, type, data: { agentId: chain.agentId ?? null, taskId: chain.taskId ?? null, ...data } }).catch(() => {});
+
+  const decision = policy.decision as Decision;
+  if (BLOCKING_DECISIONS.has(decision)) {
+    await emit('call_blocked', { budgetName, decision, reason: policy.reason });
+  } else if (['degrade', 'compress', 'summarize', 'truncate'].includes(decision)) {
+    await emit('call_degraded', { budgetName, decision, reason: policy.reason });
+  }
 
   switch (policy.decision) {
     case 'warn':

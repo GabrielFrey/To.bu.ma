@@ -1,31 +1,135 @@
 import { prisma } from '../db.js';
+import { estimateCost } from '../pricing.js';
 import { estimateTokens, type ChatMessage } from '../tokenizer.js';
 
-/**
- * Choose the cheapest model that (a) is at least as capable per a simple tier
- * order and (b) fits the prompt in its context window. Used to downgrade when a
- * budget is tight. Falls back to the requested model if nothing better fits.
- */
-export async function chooseModel(params: {
+export interface ChooseModelParams {
   requestedModel: string;
   promptTokens: number;
+  expectedCompletionTokens?: number;
+  /** Tightest remaining COST_USD budget (USD). Models whose estimate exceeds this are skipped. */
+  remainingBudgetUsd?: number;
+  /** Tightest remaining TOKENS budget. Models whose reserved tokens exceed this are skipped. */
+  remainingBudgetTokens?: number;
   organizationId?: string;
   preferCheaper: boolean;
-}): Promise<{ model: string; reason: string }> {
-  const { requestedModel, promptTokens, organizationId, preferCheaper } = params;
-  if (!preferCheaper) return { model: requestedModel, reason: 'no downgrade requested' };
+}
+
+export interface ChooseModelResult {
+  model: string;
+  reason: string;
+  estimatedCostUsd: number;
+  reservedTokens: number;
+  candidatesConsidered: number;
+  fitsRemainingBudget: boolean;
+}
+
+function blendedPrice(c: { inputPerMTokens: number; outputPerMTokens: number }): number {
+  return c.inputPerMTokens + c.outputPerMTokens;
+}
+
+/**
+ * Price-aware routing: pick the cheapest model that still fits the prompt's
+ * context window *and* the remaining hierarchical budget (USD and/or tokens).
+ * When `preferCheaper` is false, keep the requested model if it still fits.
+ */
+export async function chooseModel(params: ChooseModelParams): Promise<ChooseModelResult> {
+  const {
+    requestedModel,
+    promptTokens,
+    organizationId,
+    preferCheaper,
+    remainingBudgetUsd,
+    remainingBudgetTokens,
+  } = params;
+  const expectedCompletionTokens = params.expectedCompletionTokens ?? 256;
+  const reservedTokens = promptTokens + expectedCompletionTokens;
+
+  const requestedCost = await estimateCost(
+    requestedModel,
+    promptTokens,
+    expectedCompletionTokens,
+    organizationId
+  );
+  const requestedFitsBudget =
+    (remainingBudgetUsd == null || requestedCost <= remainingBudgetUsd) &&
+    (remainingBudgetTokens == null || reservedTokens <= remainingBudgetTokens);
+
+  if (!preferCheaper && requestedFitsBudget) {
+    return {
+      model: requestedModel,
+      reason: 'no downgrade requested',
+      estimatedCostUsd: requestedCost,
+      reservedTokens,
+      candidatesConsidered: 0,
+      fitsRemainingBudget: requestedFitsBudget,
+    };
+  }
 
   const candidates = await prisma.modelPricing.findMany({
     where: { active: true, OR: [{ organizationId }, { organizationId: null }] },
   });
-  const fitting = candidates.filter((c) => c.contextWindow >= promptTokens);
-  if (fitting.length === 0) return { model: requestedModel, reason: 'no cheaper model fits context' };
+  const byModel = new Map<string, (typeof candidates)[number]>();
+  for (const c of candidates) {
+    const prev = byModel.get(c.model);
+    if (!prev || (c.organizationId && !prev.organizationId)) byModel.set(c.model, c);
+  }
+  const unique = [...byModel.values()].filter((c) => c.contextWindow >= promptTokens);
+  if (unique.length === 0) {
+    return {
+      model: requestedModel,
+      reason: 'no cheaper model fits context',
+      estimatedCostUsd: requestedCost,
+      reservedTokens,
+      candidatesConsidered: 0,
+      fitsRemainingBudget: requestedFitsBudget,
+    };
+  }
 
-  // Cheapest by blended input+output price.
-  fitting.sort((a, b) => a.inputPerMTokens + a.outputPerMTokens - (b.inputPerMTokens + b.outputPerMTokens));
-  const cheapest = fitting[0];
-  if (cheapest.model === requestedModel) return { model: requestedModel, reason: 'already cheapest' };
-  return { model: cheapest.model, reason: `downgraded to cheaper model ${cheapest.model}` };
+  const scored: Array<(typeof unique)[number] & { estimatedCostUsd: number }> = [];
+  for (const c of unique) {
+    const estimatedCostUsd = await estimateCost(
+      c.model,
+      promptTokens,
+      expectedCompletionTokens,
+      organizationId
+    );
+    scored.push({ ...c, estimatedCostUsd });
+  }
+  scored.sort((a, b) => blendedPrice(a) - blendedPrice(b) || a.estimatedCostUsd - b.estimatedCostUsd);
+
+  const budgetFit = scored.filter((c) => {
+    const tokensOk = remainingBudgetTokens == null || reservedTokens <= remainingBudgetTokens;
+    const usdOk = remainingBudgetUsd == null || c.estimatedCostUsd <= remainingBudgetUsd;
+    return tokensOk && usdOk;
+  });
+
+  const pool = budgetFit.length > 0 ? budgetFit : scored;
+  const pick = pool[0];
+  const fitsRemainingBudget = budgetFit.some((c) => c.model === pick.model);
+
+  if (pick.model === requestedModel) {
+    return {
+      model: requestedModel,
+      reason: fitsRemainingBudget ? 'already cheapest that fits remaining budget' : 'already cheapest',
+      estimatedCostUsd: pick.estimatedCostUsd,
+      reservedTokens,
+      candidatesConsidered: scored.length,
+      fitsRemainingBudget,
+    };
+  }
+
+  const reason = !fitsRemainingBudget
+    ? `no model fits remaining budget; selected cheapest ${pick.model}`
+    : `downgraded to cheaper model ${pick.model} that fits remaining budget`;
+
+  return {
+    model: pick.model,
+    reason,
+    estimatedCostUsd: pick.estimatedCostUsd,
+    reservedTokens,
+    candidatesConsidered: scored.length,
+    fitsRemainingBudget,
+  };
 }
 
 /** Deduplicate consecutive identical messages (prompt deduplication). */

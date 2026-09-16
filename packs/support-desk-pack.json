@@ -1,0 +1,71 @@
+{
+  "kind": "tbm-policy-pack",
+  "version": 1,
+  "id": "support-desk-pack",
+  "name": "Support desk",
+  "description": "Daily agent cap, per-ticket task budget, loop stop, and degrade-before-block for helpdesk / CRM copilots.",
+  "process": "support-desk",
+  "budgets": [
+    {
+      "name": "Support agent daily USD",
+      "level": "AGENT",
+      "metric": "COST_USD",
+      "hardLimit": 25,
+      "softLimit": 18,
+      "warningThreshold": 0.75,
+      "resetPeriod": "DAILY",
+      "priority": 8,
+      "fallbackBehavior": "DEGRADE",
+      "scopeHint": "agentId"
+    },
+    {
+      "name": "Per-ticket task tokens",
+      "level": "TASK",
+      "metric": "TOKENS",
+      "hardLimit": 8000,
+      "softLimit": 6000,
+      "warningThreshold": 0.8,
+      "resetPeriod": "NEVER",
+      "priority": 6,
+      "fallbackBehavior": "COMPRESS",
+      "scopeHint": "taskId"
+    }
+  ],
+  "policies": [
+    {
+      "budgetName": "Support agent daily USD",
+      "name": "Warn before daily cap",
+      "condition": "utilization>=0.75",
+      "action": "WARN",
+      "priority": 4
+    },
+    {
+      "budgetName": "Support agent daily USD",
+      "name": "Degrade near daily cap",
+      "condition": "utilization>=0.9",
+      "action": "DEGRADE",
+      "priority": 7
+    },
+    {
+      "budgetName": "Per-ticket task tokens",
+      "name": "Stop identical-prompt loops",
+      "condition": "loop",
+      "action": "STOP_AGENT",
+      "priority": 10
+    },
+    {
+      "budgetName": "Per-ticket task tokens",
+      "name": "Cap retries on a ticket",
+      "condition": "retries>=3",
+      "action": "RETRY_LIMIT",
+      "priority": 9
+    },
+    {
+      "budgetName": "Per-ticket task tokens",
+      "name": "Compress long ticket threads",
+      "condition": "utilization>=0.7",
+      "action": "COMPRESS",
+      "priority": 5
+    }
+  ]
+}

@@ -11,6 +11,8 @@ export const EVENT_TYPES = [
   'loop_stopped',
   'agent_paused',
   'agent_resumed',
+  'call_blocked',
+  'call_degraded',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -59,6 +61,10 @@ function formatEventText(type: string, data: Record<string, unknown>): string {
       return `⏸️ Agent paused (${data.agentId}).`;
     case 'agent_resumed':
       return `▶️ Agent resumed (${data.agentId}).`;
+    case 'call_blocked':
+      return `⛔ Call blocked (${data.decision}): ${data.reason ?? ''}`;
+    case 'call_degraded':
+      return `🔻 Call degraded (${data.decision}): ${data.reason ?? ''}`;
     default:
       return `TBM event: ${type}`;
   }

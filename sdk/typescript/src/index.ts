@@ -33,6 +33,7 @@ export interface CheckResult {
   budgets: unknown[];
   recommendedModel?: string;
   signals: { signatureRepeats: number; failedAttempts: number };
+  promptCache?: { hit: boolean; priorRequestId?: string; suggestedCachedTokens?: number; hint?: string };
 }
 
 export interface UsageTokens {
@@ -161,13 +162,67 @@ export class TokenBudgetClient {
     });
   }
 
-  /** Ask the server for the cheapest model that fits the prompt. */
-  async chooseModel(params: { requestedModel: string; promptTokens: number; preferCheaper?: boolean }) {
-    return this.req<{ model: string; reason: string }>('/v1/optimize/choose-model', {
+  /** Ask the server for the cheapest model that fits the prompt and remaining budget. */
+  async chooseModel(params: {
+    requestedModel: string;
+    promptTokens: number;
+    expectedCompletionTokens?: number;
+    remainingBudgetUsd?: number;
+    remainingBudgetTokens?: number;
+    preferCheaper?: boolean;
+  }) {
+    return this.req<{
+      model: string;
+      reason: string;
+      estimatedCostUsd: number;
+      fitsRemainingBudget: boolean;
+    }>('/v1/optimize/choose-model', {
       requestedModel: params.requestedModel,
       promptTokens: params.promptTokens,
+      expectedCompletionTokens: params.expectedCompletionTokens,
+      remainingBudgetUsd: params.remainingBudgetUsd,
+      remainingBudgetTokens: params.remainingBudgetTokens,
       preferCheaper: params.preferCheaper ?? true,
     });
+  }
+
+  /** Forecast whether a multi-step agent run will exceed hierarchical budgets. */
+  async forecastRun(params: {
+    model: string;
+    estimatedSteps: number;
+    avgPromptTokens: number;
+    avgCompletionTokens: number;
+    toolCallsPerStep?: number;
+    avgToolTokens?: number;
+    scope?: Scope;
+  }) {
+    return this.req('/v1/forecast/run', {
+      ...params,
+      scope: { ...this.scope, ...params.scope },
+    });
+  }
+
+  /** Counterfactual $ / tokens saved by policy decisions. */
+  async getSavingsLedger() {
+    return this.req('/v1/analytics/savings-ledger', undefined, 'GET');
+  }
+
+  /** Chargeback / showback rows (agent, task, project, or user). */
+  async getChargeback(params: { groupBy?: 'agent' | 'task' | 'project' | 'user'; from?: string; to?: string } = {}) {
+    const qs = new URLSearchParams();
+    if (params.groupBy) qs.set('groupBy', params.groupBy);
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    const q = qs.toString();
+    return this.req(`/v1/analytics/chargeback${q ? `?${q}` : ''}`, undefined, 'GET');
+  }
+
+  async exportPolicyPack() {
+    return this.req('/v1/policy-packs/export', undefined, 'GET');
+  }
+
+  async importPolicyPack(params: { packId?: string; pack?: unknown; scopeBindings?: Scope }) {
+    return this.req('/v1/policy-packs/import', params);
   }
 
   /** Compress context (dedupe -> summarize -> prune) to fit a token target. */

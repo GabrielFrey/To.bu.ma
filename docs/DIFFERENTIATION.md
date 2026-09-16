@@ -12,9 +12,9 @@
 | 3 | **Run-level predictive overflow** | ★★★★★ | ★★★★☆ | ✅ Shipped | Runcap (partial), no hierarchy |
 | 4 | **Savings ledger (counterfactual ROI)** | ★★★★☆ | ★★★☆☆ | ✅ Shipped | None integrated |
 | 5 | **Policy simulation / dry-run** | ★★★★☆ | ★★★☆☆ | ✅ Shipped | TrueFoundry audit_mode, Orb pricing sim |
-| 6 | **Price-aware degrade under budget** | ★★★☆☆ | ★★★★☆ | ⚠️ Partial (`chooseModel`) | Portkey, Martian |
-| 7 | **Portable policy packs** | ★★★☆☆ | ★★☆☆☆ | 📋 Deferred | — |
-| 8 | **Chargeback / showback exports** | ★★★☆☆ | ★★★☆☆ | ⚠️ Partial (analytics) | TrueFoundry, Orb |
+| 6 | **Price-aware degrade under budget** | ★★★☆☆ | ★★★★☆ | ✅ Shipped (`chooseModel` remaining budget) | Portkey, Martian |
+| 7 | **Portable policy packs** | ★★★☆☆ | ★★☆☆☆ | ✅ Shipped | — |
+| 8 | **Chargeback / showback exports** | ★★★☆☆ | ★★★☆☆ | ✅ Shipped (CSV + JSON) | TrueFoundry, Orb |
 
 ---
 
@@ -135,25 +135,28 @@ Replays historical `llm_requests` through `evaluatePolicies` with synthetic poli
 
 ---
 
-### 2.6 Price-aware routing under budget (partial)
+### 2.6 Price-aware routing under budget (shipped)
 
-**Shipped:** `chooseModel` picks cheapest model fitting context window when policy returns `degrade`.
+**Shipped:** `chooseModel` picks the cheapest model that fits the prompt context window **and**
+the remaining USD/token budget (`remainingBudgetUsd` / `remainingBudgetTokens`). Used automatically
+on `degrade`/`compress` and when overflow risk is true.
 
 **Deferred:** Quality-tier constraints ("only downgrade within same capability band"), embedding-based task classification.
 
 ---
 
-### 2.7 Portable policy packs (deferred)
+### 2.7 Portable policy packs (shipped)
 
-Export/import JSON bundles of `budgets` + `budget_policies` for marketplace sharing. Schema-ready; UI/API deferred.
+Export/import JSON bundles (`kind: tbm-policy-pack`) of `budgets` + `budget_policies`. Built-in
+templates: `support-desk-pack`, `batch-etl-pack` in `packs/`. APIs:
+`GET /v1/policy-packs`, `GET /v1/policy-packs/export`, `POST /v1/policy-packs/import`.
 
 ---
 
-### 2.8 Chargeback exports (partial)
+### 2.8 Chargeback exports (shipped)
 
-**Shipped:** `by-agent`, `by-task`, `by-project` analytics.
-
-**Deferred:** Scheduled CSV/S3/webhook chargeback, FinOps GL code mapping.
+`GET /v1/analytics/chargeback?groupBy=agent|task|project|user` and `.csv` for finance showback.
+Optional `from` / `to` ISO range. Dashboard download buttons included.
 
 ---
 
@@ -161,11 +164,11 @@ Export/import JSON bundles of `budgets` + `budget_policies` for marketplace shar
 
 | Surface | Differentiators exposed |
 |---|---|
-| REST API | `/forecast/run`, `/analytics/savings-ledger`, `/policies/simulate` |
-| Dashboard | Savings ledger card, run forecast widget |
-| SDK | `forecastRun()`, `getSavingsLedger()` (TS/Python — follow-up) |
+| REST API | `/forecast/run`, `/analytics/savings-ledger`, `/policies/simulate`, `/policy-packs/*`, `/analytics/chargeback.csv` |
+| Dashboard | Savings ledger card, chargeback CSV, policy pack import |
+| SDK | `forecastRun()`, `getSavingsLedger()`, `getChargeback()`, `importPolicyPack()` (TS/Python) |
 | Demo | Sections 7–8 showcase forecast + savings |
-| Proxy | Loop stop + hard block automatic |
+| Proxy | Loop stop + hard block automatic; `call_blocked` / `call_degraded` webhooks |
 
 ---
 

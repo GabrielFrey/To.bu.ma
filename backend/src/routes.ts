@@ -13,6 +13,16 @@ import { computeSavingsLedger, costPerResolvedTask } from './services/savingsLed
 import { simulatePolicies } from './services/policySimulation.js';
 import { compressContextIfNeeded, chooseModel } from './services/optimization.js';
 import { emitEvent, EVENT_TYPES, verifyApprovalActionToken } from './services/events.js';
+import {
+  listBuiltinPacks,
+  getBuiltinPack,
+  parsePolicyPack,
+  exportPolicyPack,
+  importPolicyPack,
+} from './services/policyPacks.js';
+import { exportChargebackCsv, chargebackReport } from './services/chargeback.js';
+import { lookupPromptCache } from './services/promptCache.js';
+import { requestSignature } from './services/loopDetection.js';
 import type { ScopeChain } from './types.js';
 
 const scopeSchema = z.object({
@@ -289,9 +299,32 @@ export async function registerRoutes(app: FastifyInstance) {
 
     v1.post('/optimize/choose-model', async (req) => {
       const body = z
-        .object({ requestedModel: z.string(), promptTokens: z.number().int().min(0), preferCheaper: z.boolean().default(true) })
+        .object({
+          requestedModel: z.string(),
+          promptTokens: z.number().int().min(0),
+          expectedCompletionTokens: z.number().int().min(0).optional(),
+          remainingBudgetUsd: z.number().min(0).optional(),
+          remainingBudgetTokens: z.number().min(0).optional(),
+          preferCheaper: z.boolean().default(true),
+        })
         .parse(req.body);
       return chooseModel({ ...body, organizationId: req.auth!.organizationId });
+    });
+
+    v1.post('/optimize/cache-hint', async (req) => {
+      const body = z
+        .object({
+          model: z.string(),
+          messages: z.array(messageSchema),
+          maxAgeMs: z.number().int().positive().optional(),
+        })
+        .parse(req.body);
+      const signature = requestSignature(body.messages, body.model);
+      return lookupPromptCache({
+        organizationId: req.auth!.organizationId,
+        signature,
+        maxAgeMs: body.maxAgeMs,
+      });
     });
 
     // ---- Agent pause / resume ----
@@ -420,6 +453,75 @@ export async function registerRoutes(app: FastifyInstance) {
     v1.get('/analytics/recommendations', async (req) => analytics.recommendations(org(req)));
     v1.get('/analytics/savings-ledger', async (req) => computeSavingsLedger(org(req)));
     v1.get('/analytics/cost-per-task', async (req) => costPerResolvedTask(org(req)));
+    v1.get('/analytics/chargeback', async (req) => {
+      const q = z
+        .object({
+          groupBy: z.enum(['agent', 'task', 'project', 'user']).default('agent'),
+          from: z.string().optional(),
+          to: z.string().optional(),
+        })
+        .parse(req.query);
+      const from = q.from ? new Date(q.from) : undefined;
+      const to = q.to ? new Date(q.to) : undefined;
+      return chargebackReport(org(req), q.groupBy, from, to);
+    });
+    v1.get('/analytics/chargeback.csv', async (req, reply) => {
+      const q = z
+        .object({
+          groupBy: z.enum(['agent', 'task', 'project', 'user']).default('agent'),
+          from: z.string().optional(),
+          to: z.string().optional(),
+        })
+        .parse(req.query);
+      const from = q.from ? new Date(q.from) : undefined;
+      const to = q.to ? new Date(q.to) : undefined;
+      const { csv, filename } = await exportChargebackCsv(org(req), q.groupBy, from, to);
+      reply.header('content-type', 'text/csv; charset=utf-8');
+      reply.header('content-disposition', `attachment; filename="${filename}"`);
+      return reply.send(csv);
+    });
+
+    // ---- Policy packs (portable JSON import/export) ----
+    v1.get('/policy-packs', async () => listBuiltinPacks());
+    v1.get('/policy-packs/export', async (req) => exportPolicyPack(req.auth!.organizationId));
+    v1.get('/policy-packs/:id', async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const pack = getBuiltinPack(id);
+      if (!pack) return reply.code(404).send({ error: 'policy pack not found' });
+      return pack;
+    });
+    v1.post('/policy-packs/import', { preHandler: requireRole('admin') }, async (req, reply) => {
+      const body = z
+        .object({
+          packId: z.string().optional(),
+          pack: z.unknown().optional(),
+          scopeBindings: z
+            .object({
+              organizationId: z.string().optional(),
+              projectId: z.string().optional(),
+              userId: z.string().optional(),
+              agentId: z.string().optional(),
+              sessionId: z.string().optional(),
+              taskId: z.string().optional(),
+            })
+            .optional(),
+        })
+        .parse(req.body);
+      const raw = body.pack ?? (body.packId ? getBuiltinPack(body.packId) : undefined);
+      if (!raw) return reply.code(400).send({ error: 'pack or packId required' });
+      let pack;
+      try {
+        pack = parsePolicyPack(raw);
+      } catch (err) {
+        return reply.code(400).send({ error: (err as Error).message });
+      }
+      const result = await importPolicyPack({
+        organizationId: req.auth!.organizationId,
+        pack,
+        scopeBindings: body.scopeBindings,
+      });
+      return reply.code(201).send({ ...result, packId: pack.id, packName: pack.name });
+    });
 
     // ---- Run-level forecast (flagship differentiator) ----
     v1.post('/forecast/run', async (req, reply) => {

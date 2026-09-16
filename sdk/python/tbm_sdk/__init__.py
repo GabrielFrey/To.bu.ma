@@ -95,7 +95,7 @@ class TokenBudgetClient:
     def _request(self, path: str, body: Optional[dict] = None, method: str = "POST") -> dict:
         url = f"{self.base_url}{path}"
         pruned = self._prune(body) if body is not None else None
-        data = json.dumps(pruned).encode() if pruned is not None else None
+        data = None if method == "GET" else (json.dumps(pruned).encode() if pruned is not None else None)
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("content-type", "application/json")
         req.add_header("x-api-key", self.api_key)
@@ -169,10 +169,78 @@ class TokenBudgetClient:
             {"tool": tool, "toolTokens": tool_tokens, "model": model, "scope": self._merge_scope(scope)},
         )
 
-    def choose_model(self, requested_model: str, prompt_tokens: int, prefer_cheaper: bool = True) -> dict:
+    def choose_model(
+        self,
+        requested_model: str,
+        prompt_tokens: int,
+        prefer_cheaper: bool = True,
+        expected_completion_tokens: Optional[int] = None,
+        remaining_budget_usd: Optional[float] = None,
+        remaining_budget_tokens: Optional[int] = None,
+    ) -> dict:
         return self._request(
             "/v1/optimize/choose-model",
-            {"requestedModel": requested_model, "promptTokens": prompt_tokens, "preferCheaper": prefer_cheaper},
+            {
+                "requestedModel": requested_model,
+                "promptTokens": prompt_tokens,
+                "preferCheaper": prefer_cheaper,
+                "expectedCompletionTokens": expected_completion_tokens,
+                "remainingBudgetUsd": remaining_budget_usd,
+                "remainingBudgetTokens": remaining_budget_tokens,
+            },
+        )
+
+    def forecast_run(
+        self,
+        model: str,
+        estimated_steps: int,
+        avg_prompt_tokens: int,
+        avg_completion_tokens: int,
+        tool_calls_per_step: Optional[int] = None,
+        avg_tool_tokens: Optional[int] = None,
+        scope: Optional[dict] = None,
+    ) -> dict:
+        return self._request(
+            "/v1/forecast/run",
+            {
+                "model": model,
+                "estimatedSteps": estimated_steps,
+                "avgPromptTokens": avg_prompt_tokens,
+                "avgCompletionTokens": avg_completion_tokens,
+                "toolCallsPerStep": tool_calls_per_step,
+                "avgToolTokens": avg_tool_tokens,
+                "scope": self._merge_scope(scope),
+            },
+        )
+
+    def get_savings_ledger(self) -> dict:
+        return self._request("/v1/analytics/savings-ledger", method="GET")
+
+    def get_chargeback(
+        self,
+        group_by: str = "agent",
+        from_ts: Optional[str] = None,
+        to_ts: Optional[str] = None,
+    ) -> list:
+        qs = f"groupBy={group_by}"
+        if from_ts:
+            qs += f"&from={from_ts}"
+        if to_ts:
+            qs += f"&to={to_ts}"
+        return self._request(f"/v1/analytics/chargeback?{qs}", method="GET")  # type: ignore[return-value]
+
+    def export_policy_pack(self) -> dict:
+        return self._request("/v1/policy-packs/export", method="GET")
+
+    def import_policy_pack(
+        self,
+        pack_id: Optional[str] = None,
+        pack: Optional[dict] = None,
+        scope_bindings: Optional[dict] = None,
+    ) -> dict:
+        return self._request(
+            "/v1/policy-packs/import",
+            {"packId": pack_id, "pack": pack, "scopeBindings": scope_bindings},
         )
 
     def compress_context_if_needed(self, model: str, messages: List[dict], target_tokens: int) -> dict:

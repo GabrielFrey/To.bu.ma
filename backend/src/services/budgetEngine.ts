@@ -1,6 +1,7 @@
 import { prisma } from '../db.js';
 import { config } from '../config.js';
 import type { BudgetLevel, ScopeChain } from '../types.js';
+import { expireStaleReservations } from './accounting.js';
 
 export interface BudgetStatus {
   budgetId: string;
@@ -137,6 +138,7 @@ export async function resolveBudgets(
   projectedTokens: number,
   projectedCost: number
 ): Promise<BudgetStatus[]> {
+  await expireStaleReservations();
   const budgets = await prisma.budget.findMany({
     where: { organizationId: chain.organizationId, active: true },
   });

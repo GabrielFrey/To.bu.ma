@@ -72,17 +72,20 @@ export default function App() {
   const [keyInput, setKeyInput] = useState(getApiKey());
   const [urlInput, setUrlInput] = useState(getBaseUrl());
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [packs, setPacks] = useState<{ id: string; name: string; description: string }[]>([]);
+  const [packStatus, setPackStatus] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [t, a, ts, b, w, bl, e, l, r, sav] = await Promise.all([
+      const [t, a, ts, b, w, bl, e, l, r, sav, pk] = await Promise.all([
         api.total(), api.byAgent(), api.byTask(), api.activeBudgets(),
         api.warnings(), api.blocked(), api.expensive(), api.loops(), api.recommendations(),
-        api.savingsLedger(),
+        api.savingsLedger(), api.listPolicyPacks(),
       ]);
       setTotal(t); setAgents(a); setTasks(ts); setBudgets(b);
       setWarnings(w); setBlocked(bl); setExpensive(e); setLoops(l); setRecs(r);
       setSavings(sav);
+      setPacks(pk);
       setError(null);
       setLastUpdated(new Date());
     } catch (err) {
@@ -207,6 +210,48 @@ export default function App() {
             rows={agents.map((a) => [a.agentName, fmt(a.totalTokens), usd(a.costUsd), String(a.requests)])}
             head={['Agent', 'Tokens', 'Cost', 'Reqs']}
           />
+        </Card>
+
+        {/* Chargeback / policy packs */}
+        <Card title="Chargeback & policy packs">
+          <p className="text-xs text-slate-500 mb-2">Export cost by dimension for finance, or drop a portable pack onto this tenant.</p>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {(['agent', 'task', 'project', 'user'] as const).map((g) => (
+              <button
+                key={g}
+                className="text-xs bg-slate-800 text-white rounded px-2 py-1 hover:bg-slate-700"
+                onClick={() => api.downloadChargebackCsv(g).catch((err) => setError((err as Error).message))}
+              >
+                CSV · {g}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-2">
+            {packs.length === 0 && <p className="text-sm text-slate-400">No built-in packs loaded.</p>}
+            {packs.map((p) => (
+              <div key={p.id} className="flex items-start justify-between gap-2 text-sm">
+                <div>
+                  <div className="font-medium text-slate-700">{p.name}</div>
+                  <div className="text-xs text-slate-400">{p.description}</div>
+                </div>
+                <button
+                  className="text-xs border border-slate-300 rounded px-2 py-1 hover:bg-slate-50 shrink-0"
+                  onClick={async () => {
+                    try {
+                      const r = await api.importPolicyPack(p.id);
+                      setPackStatus(`Imported ${r.packName}: ${r.budgetsCreated} budgets, ${r.policiesCreated} policies`);
+                      load();
+                    } catch (err) {
+                      setError((err as Error).message);
+                    }
+                  }}
+                >
+                  Import
+                </button>
+              </div>
+            ))}
+            {packStatus && <p className="text-xs text-emerald-700">{packStatus}</p>}
+          </div>
         </Card>
 
         {/* Spend by task */}

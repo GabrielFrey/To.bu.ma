@@ -136,7 +136,8 @@ cd sdk/python && TBM_API_KEY=tbm_demo_local_key python3 example.py
 ```
 
 SDK methods (identical surface in both languages): `beforeLLMCall`, `afterLLMCall`,
-`estimateTokens`, `enforceBudget`, `chooseModel`, `compressContextIfNeeded`, `recordToolUsage`
+`estimateTokens`, `enforceBudget`, `chooseModel`, `compressContextIfNeeded`, `recordToolUsage`,
+`forecastRun`, `getSavingsLedger`, `getChargeback`, `exportPolicyPack`, `importPolicyPack`
 (+ `complete` convenience that runs the whole gateway via the server's mock provider).
 
 ## Integration options
@@ -151,6 +152,7 @@ TBM is designed to embed into **any** business process. Pick the integration tha
 | **Docker service** | Deploy the whole stack (API + Postgres + dashboard) | [Deploy with Docker](#deploy-with-docker) |
 | **Framework middleware** | Vercel AI SDK / LangChain (JS + Python) | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
 | **No-code (n8n / Zapier / Make)** | Automations without writing code | [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) |
+| **Policy packs** | Drop a support-desk or batch-ETL JSON pack onto a project | [docs/EMBED_ANY_PROCESS.md](docs/EMBED_ANY_PROCESS.md) |
 
 ## Drop-in integration — transparent OpenAI-compatible proxy
 
@@ -247,10 +249,13 @@ encrypted, and leave `TBM_PROXY_UPSTREAM=openai` (default). For offline demos/te
 | `POST /webhooks`, `GET /webhooks`, `DELETE /webhooks/:id` | manage webhook/notification channels |
 | `POST /webhooks/test`, `GET /webhooks/:id/deliveries`, `GET /events` | test + inspect deliveries/event feed |
 | `POST /v1/chat/completions`, `/v1/completions`, `/v1/embeddings` | **drop-in proxy** (Bearer auth) |
-| `GET /analytics/{total,by-agent,by-task,by-project,active-budgets,warnings,blocked,expensive-prompts,loops,recommendations,savings-ledger,cost-per-task}` | dashboard data |
+| `GET /analytics/{total,by-agent,by-task,by-project,active-budgets,warnings,blocked,expensive-prompts,loops,recommendations,savings-ledger,cost-per-task,chargeback}` | dashboard data |
+| `GET /analytics/chargeback.csv` | FinOps chargeback/showback CSV (`groupBy=agent\|task\|project\|user`) |
+| `GET /policy-packs`, `GET /policy-packs/:id`, `GET /policy-packs/export`, `POST /policy-packs/import` | portable policy pack templates + live export/import |
 
 See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for the drop-in proxy, webhooks/notifications,
-Docker, framework middleware, and no-code connector guides.
+Docker, framework middleware, and no-code connector guides. One-page cookbook for SAP / CRM /
+helpdesk / n8n / LangChain: [docs/EMBED_ANY_PROCESS.md](docs/EMBED_ANY_PROCESS.md).
 
 ## Deploy with Docker
 

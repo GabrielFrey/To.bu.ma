@@ -336,9 +336,9 @@ See [`DIFFERENTIATION.md`](./DIFFERENTIATION.md) for implementation specs. Summa
 3. **Run-level predictive overflow** — high impact, moderate feasibility; **implemented in TBM**.
 4. **Savings ledger (counterfactual ROI)** — high impact for finance; **implemented in TBM**.
 5. **Policy simulation / dry-run** — high impact for safe rollouts; **implemented in TBM**.
-6. **Cross-provider price-aware routing under budget** — partial via `chooseModel`; quality-aware routing deferred.
-7. **Portable policy packs / marketplace** — deferred; schema supports it.
-8. **Multi-tenant chargeback exports** — partial via analytics; CSV/webhook chargeback deferred.
+6. **Cross-provider price-aware routing under budget** — **implemented** via `chooseModel` remaining-budget fit; quality-aware routing deferred.
+7. **Portable policy packs / marketplace** — **implemented** (import/export JSON + support-desk / batch-etl templates).
+8. **Multi-tenant chargeback exports** — **implemented** (CSV/JSON by agent/task/project/user).
 
 ---
 

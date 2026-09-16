@@ -76,4 +76,27 @@ export const api = {
   loops: () => get<LoopRow[]>('/v1/analytics/loops'),
   recommendations: () => get<Recommendation[]>('/v1/analytics/recommendations'),
   savingsLedger: () => get<SavingsLedger>('/v1/analytics/savings-ledger'),
+  listPolicyPacks: () => get<{ id: string; name: string; description: string; process: string }[]>('/v1/policy-packs'),
+  importPolicyPack: async (packId: string) => {
+    const res = await fetch(`${getBaseUrl()}/v1/policy-packs/import`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': getApiKey() },
+      body: JSON.stringify({ packId }),
+    });
+    if (!res.ok) throw new Error(`/v1/policy-packs/import → ${res.status}`);
+    return res.json() as Promise<{ budgetsCreated: number; policiesCreated: number; packName: string }>;
+  },
+  downloadChargebackCsv: async (groupBy: 'agent' | 'task' | 'project' | 'user') => {
+    const res = await fetch(`${getBaseUrl()}/v1/analytics/chargeback.csv?groupBy=${groupBy}`, {
+      headers: { 'x-api-key': getApiKey() },
+    });
+    if (!res.ok) throw new Error(`/v1/analytics/chargeback.csv → ${res.status}`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `tbm-chargeback-${groupBy}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
