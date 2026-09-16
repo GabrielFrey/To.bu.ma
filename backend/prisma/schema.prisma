@@ -28,6 +28,8 @@ model Organization {
   auditLogs    AuditLog[]
   webhooks     Webhook[]
   eventLogs    EventLog[]
+
+  assistantConversations AssistantConversation[]
 }
 
 model User {
@@ -317,6 +319,73 @@ model WebhookDelivery {
 
   @@index([webhookId, status])
   @@index([organizationId, createdAt])
+}
+
+/// In-product AI assistant. Conversations are tenant-scoped; the assistant's own
+/// LLM calls are budgeted through the normal gateway under agent `tbm-assistant`,
+/// so `AssistantMessage.requestId` points at a real LlmRequest/TokenUsage pair.
+model AssistantConversation {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  messages     AssistantMessage[]
+  toolCalls    AssistantToolCall[]
+
+  @@index([organizationId, updatedAt])
+}
+
+model AssistantMessage {
+  id             String  @id @default(cuid())
+  conversationId String
+  organizationId String
+  role           String // system | user | assistant | tool
+  content        String
+  /// Set on role=tool messages: the tool call this message answers.
+  toolCallId     String?
+  name           String?
+  /// Accounting for the LLM turn that produced this message (assistant rows only).
+  requestId      String?
+  inputTokens    Int      @default(0)
+  outputTokens   Int      @default(0)
+  costUsd        Float    @default(0)
+  createdAt      DateTime @default(now())
+
+  conversation AssistantConversation @relation(fields: [conversationId], references: [id])
+  toolCalls    AssistantToolCall[]
+
+  @@index([conversationId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+model AssistantToolCall {
+  id             String  @id @default(cuid())
+  conversationId String
+  organizationId String
+  messageId      String?
+  tool           String
+  /// JSON-encoded arguments as produced by the model.
+  args           String
+  /// read | write | destructive — the risk class that decided gating.
+  risk           String  @default("read")
+  /// executed | pending_confirmation | confirmed | denied | expired | error
+  status         String  @default("executed")
+  result         String?
+  error          String?
+  durationMs     Int      @default(0)
+  /// Who the call ran as, mirrored into the audit log.
+  actor          String
+  createdAt      DateTime @default(now())
+  executedAt     DateTime?
+
+  conversation AssistantConversation @relation(fields: [conversationId], references: [id])
+  message      AssistantMessage?     @relation(fields: [messageId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@index([organizationId, tool])
 }
 
 model EventLog {

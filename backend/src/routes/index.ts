@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db.js';
 import { authenticate } from '../auth.js';
+import { registerAssistantRoutes } from '../assistant/routes.js';
 import { registerAgentRoutes } from './agents.js';
 import { registerAnalyticsRoutes } from './analytics.js';
 import { registerApprovalRoutes, registerPublicApprovalRoutes } from './approvals.js';
@@ -40,6 +41,7 @@ export async function registerRoutes(app: FastifyInstance) {
       await registerWebhookRoutes(v1);
       await registerAnalyticsRoutes(v1);
       await registerPolicyPackRoutes(v1);
+      await registerAssistantRoutes(v1);
     },
     { prefix: '/v1' }
   );

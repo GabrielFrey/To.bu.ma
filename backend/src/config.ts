@@ -19,6 +19,19 @@ export const config = {
   retryThreshold: 3,
   // Public base URL used to build actionable approval links in notifications.
   publicUrl: process.env.TBM_PUBLIC_URL ?? `http://localhost:${Number(process.env.PORT ?? 4000)}`,
+  // ---- In-product AI assistant ----
+  // Provider used for the assistant's own LLM turns. 'mock' is fully offline and
+  // deterministic; 'openai' requires a key (env or an encrypted provider key).
+  assistantProvider: (process.env.TBM_ASSISTANT_PROVIDER ?? 'mock') as 'mock' | 'openai',
+  assistantModel: process.env.TBM_ASSISTANT_MODEL ?? 'gpt-4o-mini',
+  // Default monthly token budget created for the `tbm-assistant` agent.
+  assistantBudgetTokens: Number(process.env.TBM_ASSISTANT_BUDGET_TOKENS ?? 200_000),
+  // Max provider round-trips per user turn (tool call -> result -> answer).
+  assistantMaxSteps: Number(process.env.TBM_ASSISTANT_MAX_STEPS ?? 6),
+  // How long a confirmation token for a gated tool stays valid.
+  assistantConfirmTtlMs: Number(process.env.TBM_ASSISTANT_CONFIRM_TTL_MS ?? 10 * 60 * 1000),
+  // approve_request above this estimated cost needs explicit human confirmation.
+  assistantApprovalUsdLimit: Number(process.env.TBM_ASSISTANT_APPROVAL_USD_LIMIT ?? 1),
   // Max accepted request body. Bounds the tokenizer work a single call can cause.
   bodyLimitBytes: Number(process.env.TBM_BODY_LIMIT_BYTES ?? 4 * 1024 * 1024),
   // Outbound webhook delivery: retry with exponential backoff.

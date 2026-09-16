@@ -6,6 +6,9 @@ import { prisma } from './db.js';
  * a model means editing exactly one list.
  */
 export async function resetDatabase(): Promise<void> {
+  await prisma.assistantToolCall.deleteMany();
+  await prisma.assistantMessage.deleteMany();
+  await prisma.assistantConversation.deleteMany();
   await prisma.webhookDelivery.deleteMany();
   await prisma.webhook.deleteMany();
   await prisma.eventLog.deleteMany();
