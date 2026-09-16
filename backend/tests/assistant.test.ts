@@ -528,6 +528,40 @@ describe('assistant HTTP surface', () => {
     expect(events.at(-1)).toBe('end');
   });
 
+  it('emits a step usage frame before the tool calls that step decided on', async () => {
+    // The dashboard attributes each tool card's tokens/cost to the preceding
+    // `usage` frame. If that order ever flips, the UI silently mis-attributes
+    // cost, so the contract is pinned here.
+    await seedTenant();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/assistant/chat/stream',
+      headers,
+      payload: { message: 'delete the budget named "nope"' },
+    });
+    const frames = res.payload
+      .split('\n\n')
+      .filter((chunk) => chunk.includes('data:'))
+      .map((chunk) => JSON.parse(chunk.split('\n')[1].replace('data: ', '')));
+
+    const usageAt = frames.findIndex((f) => f.type === 'usage');
+    const callAt = frames.findIndex((f) => f.type === 'tool_call');
+    expect(usageAt).toBeGreaterThanOrEqual(0);
+    expect(callAt).toBeGreaterThan(usageAt);
+
+    // A gated call is announced twice: once as a call, once as the prompt the
+    // operator has to answer, carrying a token the UI can send straight back.
+    const gate = frames.find((f) => f.type === 'pending_confirmation');
+    expect(gate.call.confirm.confirmToken).toMatch(/^\d+\.[0-9a-f]+$/);
+    expect(gate.call.confirm.reason).toBeTruthy();
+    expect(new Date(gate.call.confirm.expiresAt).getTime()).toBeGreaterThan(Date.now());
+
+    // The terminal frame is the same payload the non-streaming route returns.
+    const done = frames.find((f) => f.type === 'done');
+    expect(done.response.stoppedBecause).toBe('awaiting_confirmation');
+    expect(done.response.pendingConfirmations[0].id).toBe(gate.call.id);
+  });
+
   it('scopes conversations per tenant', async () => {
     await seedTenant();
     const mine = (await chat({ message: 'list our budgets' })).json();

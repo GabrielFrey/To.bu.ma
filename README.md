@@ -27,6 +27,27 @@ Full matrix and gap analysis: [`docs/COMPETITIVE_ANALYSIS.md`](docs/COMPETITIVE_
 - `POST /v1/forecast/run` — predict if a multi-step agent run will bust budget *before* step 1
 - `GET /v1/analytics/savings-ledger` — counterfactual $ saved by each policy decision
 - `POST /v1/policies/simulate` — dry-run policies against historical traffic
+- `POST /v1/assistant/chat` — an in-product agent that answers **and acts**, gates destructive
+  actions behind a confirm-token round-trip, and **is metered by this product itself**
+
+## The in-product AI assistant
+
+Ask about spend or tell it what to change, by text or by voice:
+
+> *"which agent costs the most?"* · *"create a budget called Q3 cap for 500k tokens"* ·
+> *"what if I lowered the org budget 30%?"* · *"delete the budget named Org monthly tokens"*
+
+26 tools over the existing service layer. Read tools and low-risk writes run directly;
+`delete_budget`, `resume_agent` and `import_policy_pack` always stop for confirmation, and
+`update_budget`, `create_policy` and `approve_request` stop when their *arguments* make them
+risky — raising a hard limit asks first, lowering the same limit does not. Every tool call is
+audited with tenant and actor.
+
+The part worth stealing: **the assistant's own LLM calls go through TBM's gateway**, under the
+agent `tbm-assistant` with its own budget. Its tokens appear in `Spend by agent`, and squeezing
+its budget blocks it — the product governing itself. Works fully offline on the mock provider.
+
+Details, risk classification and limitations: [`docs/ASSISTANT.md`](docs/ASSISTANT.md).
 
 ## Contents
 
