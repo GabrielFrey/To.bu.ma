@@ -2,6 +2,73 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-surface-muted text-ink-body;
+/*
+  Semantic tokens. Tailwind 3 maps these CSS variables in tailwind.config.js.
+  Names follow the ops UI contract: surface, text, text-muted, border, accent,
+  success, warning, danger. Role tokens (ok/warn/info/gate) stay for status.
+*/
+:root {
+  --color-surface: 255 255 255;
+  --color-surface-muted: 248 250 252;
+  --color-surface-inset: 241 245 249;
+  --color-text: 30 41 59;
+  --color-text-strong: 15 23 42;
+  --color-text-body: 30 41 59;
+  --color-text-muted: 100 116 139;
+  --color-text-faint: 148 163 184;
+  --color-text-inverse: 255 255 255;
+  --color-border: 226 232 240;
+  --color-border-strong: 203 213 225;
+  --color-border-subtle: 241 245 249;
+  --color-accent: 30 41 59;
+  --color-accent-hover: 51 65 85;
+  --color-accent-soft: 241 245 249;
+  --color-accent-ring: 148 163 184;
+  --color-success: 16 185 129;
+  --color-success-soft: 236 253 245;
+  --color-success-ink: 4 120 87;
+  --color-warning: 245 158 11;
+  --color-warning-soft: 255 251 235;
+  --color-warning-ink: 180 83 9;
+  --color-danger: 239 68 68;
+  --color-danger-soft: 254 242 242;
+  --color-danger-ink: 185 28 28;
+  --color-info: 14 165 233;
+  --color-info-soft: 240 249 255;
+  --color-info-ink: 3 105 161;
+  --color-gate: 168 85 247;
+  --color-gate-soft: 250 245 255;
+  --color-gate-ink: 126 34 206;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-surface-muted text-ink-body text-sm antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent-ring ring-offset-2 ring-offset-surface;
+  }
+}
+
+@layer utilities {
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50;
+    @apply focus:px-3 focus:py-2 focus:rounded-md focus:bg-accent focus:text-ink-inverse focus:text-sm focus:font-medium;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

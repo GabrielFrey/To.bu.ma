@@ -15,9 +15,33 @@ export function setBaseUrl(u: string) {
   localStorage.setItem(URL_STORAGE, u);
 }
 
+export interface DateQuery {
+  from?: string;
+  to?: string;
+}
+
+export function queryString(params: object): string {
+  const u = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === 'string' && value) u.set(key, value);
+  }
+  const s = u.toString();
+  return s ? `?${s}` : '';
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${getBaseUrl()}${path}`, {
     headers: { 'x-api-key': getApiKey() },
+  });
+  if (!res.ok) throw new Error(`${path} → ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${getBaseUrl()}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': getApiKey() },
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${path} → ${res.status}`);
   return res.json() as Promise<T>;
@@ -34,15 +58,113 @@ export interface TotalSpend {
 }
 export interface AgentSpend { agentId: string | null; agentName: string; totalTokens: number; costUsd: number; requests: number; }
 export interface TaskSpend { taskId: string | null; taskName: string; totalTokens: number; costUsd: number; requests: number; }
-export interface BudgetStatus {
-  budgetId: string; name: string; level: string; metric: string; hardLimit: number;
-  used: number; reserved: number; remaining: number; utilization: number;
-  exceedsHard: boolean; exceedsSoft: boolean; atWarning: boolean;
+export interface ProjectSpend {
+  projectId: string | null;
+  projectName: string;
+  totalTokens: number;
+  costUsd: number;
+  requests: number;
 }
-export interface PolicyEvent { id: string; decision: string; reason: string; utilization: number | null; createdAt: string; }
-export interface ExpensivePrompt { requestId: string; model: string; totalTokens: number; costUsd: number; agentId: string | null; taskId: string | null; }
+export interface BudgetStatus {
+  budgetId: string;
+  name: string;
+  level: string;
+  metric: string;
+  hardLimit: number;
+  softLimit: number | null;
+  warningThreshold?: number;
+  fallbackBehavior?: string;
+  resetPeriod?: string;
+  used: number;
+  reserved: number;
+  remaining: number;
+  utilization: number;
+  exceedsHard: boolean;
+  exceedsSoft: boolean;
+  atWarning: boolean;
+}
+export interface PolicyEvent {
+  id: string;
+  decision: string;
+  reason: string;
+  utilization: number | null;
+  createdAt: string;
+}
+export interface ExpensivePrompt {
+  requestId: string;
+  model: string;
+  totalTokens: number;
+  costUsd: number;
+  agentId: string | null;
+  taskId: string | null;
+  createdAt?: string;
+}
 export interface LoopRow { sessionId: string | null; signature: string | null; repeats: number; }
 export interface Recommendation { type: string; message: string; severity: 'info' | 'warn'; }
+export interface RecentRequest {
+  id: string;
+  model: string;
+  status: string;
+  decision: string | null;
+  estimatedCostUsd: number;
+  reservedTokens: number;
+  createdAt: string;
+  agentId: string | null;
+  taskId: string | null;
+}
+export interface PolicyRecord {
+  id: string;
+  budgetId: string;
+  name: string;
+  condition: string;
+  action: string;
+  params: string | null;
+  priority: number;
+  active: boolean;
+  createdAt: string;
+}
+export interface BudgetRecord {
+  id: string;
+  name: string;
+  level: string;
+  metric: string;
+  hardLimit: number;
+  softLimit: number | null;
+  warningThreshold: number;
+  resetPeriod: string;
+  fallbackBehavior: string;
+  active: boolean;
+  policies?: PolicyRecord[];
+}
+export interface SimulationResult {
+  sampleSize: number;
+  wouldAllow: number;
+  wouldWarn: number;
+  wouldDegrade: number;
+  wouldBlock: number;
+  projectedSavingsUsd: number;
+  examples: {
+    requestId: string;
+    model: string;
+    actualDecision: string | null;
+    simulatedDecision: string;
+    wouldChange: boolean;
+    estimatedCostUsd: number;
+  }[];
+  note: string;
+}
+export interface EventLogRow {
+  id: string;
+  type: string;
+  data: unknown;
+  createdAt: string;
+}
+export interface CostPerTask {
+  completedTasks: number;
+  totalCostUsd: number;
+  costPerTaskUsd: number | null;
+  totalTokens: number;
+}
 
 export interface SavingsLedger {
   totalSavedUsd: number;
@@ -65,27 +187,40 @@ export interface RunForecast {
 }
 
 export const api = {
-  total: () => get<TotalSpend>('/v1/analytics/total'),
-  byAgent: () => get<AgentSpend[]>('/v1/analytics/by-agent'),
-  byTask: () => get<TaskSpend[]>('/v1/analytics/by-task'),
-  byProject: () => get<{ projectId: string | null; projectName: string; totalTokens: number; costUsd: number; requests: number }[]>('/v1/analytics/by-project'),
+  total: (range?: DateQuery) => get<TotalSpend>(`/v1/analytics/total${queryString(range ?? {})}`),
+  byAgent: (range?: DateQuery) => get<AgentSpend[]>(`/v1/analytics/by-agent${queryString(range ?? {})}`),
+  byTask: (range?: DateQuery) => get<TaskSpend[]>(`/v1/analytics/by-task${queryString(range ?? {})}`),
+  byProject: (range?: DateQuery) =>
+    get<ProjectSpend[]>(`/v1/analytics/by-project${queryString(range ?? {})}`),
   activeBudgets: () => get<BudgetStatus[]>('/v1/analytics/active-budgets'),
-  warnings: () => get<PolicyEvent[]>('/v1/analytics/warnings'),
-  blocked: () => get<PolicyEvent[]>('/v1/analytics/blocked'),
-  expensive: () => get<ExpensivePrompt[]>('/v1/analytics/expensive-prompts'),
-  loops: () => get<LoopRow[]>('/v1/analytics/loops'),
-  recommendations: () => get<Recommendation[]>('/v1/analytics/recommendations'),
+  warnings: (range?: DateQuery) =>
+    get<PolicyEvent[]>(`/v1/analytics/warnings${queryString(range ?? {})}`),
+  blocked: (range?: DateQuery) =>
+    get<PolicyEvent[]>(`/v1/analytics/blocked${queryString(range ?? {})}`),
+  expensive: (range?: DateQuery) =>
+    get<ExpensivePrompt[]>(`/v1/analytics/expensive-prompts${queryString(range ?? {})}`),
+  loops: (range?: DateQuery) => get<LoopRow[]>(`/v1/analytics/loops${queryString(range ?? {})}`),
+  recommendations: (range?: DateQuery) =>
+    get<Recommendation[]>(`/v1/analytics/recommendations${queryString(range ?? {})}`),
+  recentRequests: (range?: DateQuery) =>
+    get<RecentRequest[]>(`/v1/analytics/recent-requests${queryString(range ?? {})}`),
   savingsLedger: () => get<SavingsLedger>('/v1/analytics/savings-ledger'),
-  listPolicyPacks: () => get<{ id: string; name: string; description: string; process: string }[]>('/v1/policy-packs'),
-  importPolicyPack: async (packId: string) => {
-    const res = await fetch(`${getBaseUrl()}/v1/policy-packs/import`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': getApiKey() },
-      body: JSON.stringify({ packId }),
-    });
-    if (!res.ok) throw new Error(`/v1/policy-packs/import → ${res.status}`);
-    return res.json() as Promise<{ budgetsCreated: number; policiesCreated: number; packName: string }>;
-  },
+  costPerTask: () => get<CostPerTask>('/v1/analytics/cost-per-task'),
+  budgets: () => get<BudgetRecord[]>('/v1/budgets'),
+  policies: () => get<PolicyRecord[]>('/v1/policies'),
+  events: () => get<EventLogRow[]>('/v1/events'),
+  simulatePolicies: (body: {
+    budgetId?: string;
+    hypotheticalPolicies: { name: string; condition: string; action: string; priority?: number }[];
+    lookbackHours?: number;
+  }) => post<SimulationResult>('/v1/policies/simulate', body),
+  listPolicyPacks: () =>
+    get<{ id: string; name: string; description: string; process: string }[]>('/v1/policy-packs'),
+  importPolicyPack: (packId: string) =>
+    post<{ budgetsCreated: number; policiesCreated: number; packName: string }>(
+      '/v1/policy-packs/import',
+      { packId }
+    ),
   assistantTools: () => get<AssistantTools>('/v1/assistant/tools'),
   assistantSpend: () => get<AssistantSpend>('/v1/assistant/spend'),
   assistantConversations: () =>
@@ -99,10 +234,14 @@ export const api = {
     });
     if (!res.ok) throw new Error(`delete conversation → ${res.status}`);
   },
-  downloadChargebackCsv: async (groupBy: 'agent' | 'task' | 'project' | 'user') => {
-    const res = await fetch(`${getBaseUrl()}/v1/analytics/chargeback.csv?groupBy=${groupBy}`, {
-      headers: { 'x-api-key': getApiKey() },
-    });
+  downloadChargebackCsv: async (
+    groupBy: 'agent' | 'task' | 'project' | 'user',
+    range?: DateQuery
+  ) => {
+    const res = await fetch(
+      `${getBaseUrl()}/v1/analytics/chargeback.csv${queryString({ groupBy, ...range })}`,
+      { headers: { 'x-api-key': getApiKey() } }
+    );
     if (!res.ok) throw new Error(`/v1/analytics/chargeback.csv → ${res.status}`);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);

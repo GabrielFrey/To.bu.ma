@@ -1,9 +1,24 @@
 import { prisma } from '../db.js';
 import { config } from '../config.js';
 
-export async function totalSpend(organizationId: string) {
+export interface DateRange {
+  from?: Date;
+  to?: Date;
+}
+
+function createdAt(range?: DateRange) {
+  if (!range?.from && !range?.to) return undefined;
+  return {
+    createdAt: {
+      ...(range.from ? { gte: range.from } : {}),
+      ...(range.to ? { lte: range.to } : {}),
+    },
+  };
+}
+
+export async function totalSpend(organizationId: string, range?: DateRange) {
   const agg = await prisma.tokenUsage.aggregate({
-    where: { organizationId },
+    where: { organizationId, ...createdAt(range) },
     _sum: { totalTokens: true, inputTokens: true, outputTokens: true, cachedTokens: true, toolTokens: true, costUsd: true },
     _count: true,
   });
@@ -18,10 +33,10 @@ export async function totalSpend(organizationId: string) {
   };
 }
 
-export async function spendByAgent(organizationId: string) {
+export async function spendByAgent(organizationId: string, range?: DateRange) {
   const rows = await prisma.tokenUsage.groupBy({
     by: ['agentId'],
-    where: { organizationId },
+    where: { organizationId, ...createdAt(range) },
     _sum: { totalTokens: true, costUsd: true },
     _count: true,
   });
@@ -29,19 +44,21 @@ export async function spendByAgent(organizationId: string) {
     where: { id: { in: rows.map((r) => r.agentId).filter(Boolean) as string[] } },
   });
   const nameById = new Map(agents.map((a) => [a.id, a.name]));
-  return rows.map((r) => ({
-    agentId: r.agentId,
-    agentName: r.agentId ? nameById.get(r.agentId) ?? r.agentId : '(none)',
-    totalTokens: r._sum.totalTokens ?? 0,
-    costUsd: Number((r._sum.costUsd ?? 0).toFixed(6)),
-    requests: r._count,
-  }));
+  return rows
+    .map((r) => ({
+      agentId: r.agentId,
+      agentName: r.agentId ? nameById.get(r.agentId) ?? r.agentId : '(none)',
+      totalTokens: r._sum.totalTokens ?? 0,
+      costUsd: Number((r._sum.costUsd ?? 0).toFixed(6)),
+      requests: r._count,
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd);
 }
 
-export async function spendByTask(organizationId: string) {
+export async function spendByTask(organizationId: string, range?: DateRange) {
   const rows = await prisma.tokenUsage.groupBy({
     by: ['taskId'],
-    where: { organizationId },
+    where: { organizationId, ...createdAt(range) },
     _sum: { totalTokens: true, costUsd: true },
     _count: true,
   });
@@ -49,19 +66,21 @@ export async function spendByTask(organizationId: string) {
     where: { id: { in: rows.map((r) => r.taskId).filter(Boolean) as string[] } },
   });
   const nameById = new Map(tasks.map((t) => [t.id, t.name ?? t.id]));
-  return rows.map((r) => ({
-    taskId: r.taskId,
-    taskName: r.taskId ? nameById.get(r.taskId) ?? r.taskId : '(none)',
-    totalTokens: r._sum.totalTokens ?? 0,
-    costUsd: Number((r._sum.costUsd ?? 0).toFixed(6)),
-    requests: r._count,
-  }));
+  return rows
+    .map((r) => ({
+      taskId: r.taskId,
+      taskName: r.taskId ? nameById.get(r.taskId) ?? r.taskId : '(none)',
+      totalTokens: r._sum.totalTokens ?? 0,
+      costUsd: Number((r._sum.costUsd ?? 0).toFixed(6)),
+      requests: r._count,
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd);
 }
 
-export async function spendByProject(organizationId: string) {
+export async function spendByProject(organizationId: string, range?: DateRange) {
   const rows = await prisma.tokenUsage.groupBy({
     by: ['projectId'],
-    where: { organizationId },
+    where: { organizationId, ...createdAt(range) },
     _sum: { totalTokens: true, costUsd: true },
     _count: true,
   });
@@ -69,13 +88,15 @@ export async function spendByProject(organizationId: string) {
     where: { id: { in: rows.map((r) => r.projectId).filter(Boolean) as string[] } },
   });
   const nameById = new Map(projects.map((p) => [p.id, p.name]));
-  return rows.map((r) => ({
-    projectId: r.projectId,
-    projectName: r.projectId ? nameById.get(r.projectId) ?? r.projectId : '(none)',
-    totalTokens: r._sum.totalTokens ?? 0,
-    costUsd: Number((r._sum.costUsd ?? 0).toFixed(6)),
-    requests: r._count,
-  }));
+  return rows
+    .map((r) => ({
+      projectId: r.projectId,
+      projectName: r.projectId ? nameById.get(r.projectId) ?? r.projectId : '(none)',
+      totalTokens: r._sum.totalTokens ?? 0,
+      costUsd: Number((r._sum.costUsd ?? 0).toFixed(6)),
+      requests: r._count,
+    }))
+    .sort((a, b) => b.costUsd - a.costUsd);
 }
 
 export async function activeBudgets(organizationId: string) {
@@ -96,30 +117,38 @@ export async function activeBudgets(organizationId: string) {
       0
     );
     const s = statuses.find((x) => x.budgetId === b.id);
-    if (s) out.push(s);
+    if (s) out.push({ ...s, resetPeriod: b.resetPeriod, active: b.active });
   }
-  return out;
+  return out.sort((a, b) => b.utilization - a.utilization);
 }
 
-export async function warnings(organizationId: string) {
+export async function warnings(organizationId: string, range?: DateRange) {
   return prisma.policyEvent.findMany({
-    where: { organizationId, decision: { in: ['warn', 'degrade', 'compress', 'summarize'] } },
+    where: {
+      organizationId,
+      decision: { in: ['warn', 'degrade', 'compress', 'summarize'] },
+      ...createdAt(range),
+    },
     orderBy: { createdAt: 'desc' },
     take: 50,
   });
 }
 
-export async function blockedRequests(organizationId: string) {
+export async function blockedRequests(organizationId: string, range?: DateRange) {
   return prisma.policyEvent.findMany({
-    where: { organizationId, decision: { in: ['stop-agent', 'require-approval', 'retry-limit', 'tool-limit', 'truncate'] } },
+    where: {
+      organizationId,
+      decision: { in: ['stop-agent', 'require-approval', 'retry-limit', 'tool-limit', 'truncate'] },
+      ...createdAt(range),
+    },
     orderBy: { createdAt: 'desc' },
     take: 50,
   });
 }
 
-export async function expensivePrompts(organizationId: string) {
+export async function expensivePrompts(organizationId: string, range?: DateRange) {
   const rows = await prisma.tokenUsage.findMany({
-    where: { organizationId },
+    where: { organizationId, ...createdAt(range) },
     orderBy: { costUsd: 'desc' },
     take: 10,
   });
@@ -130,14 +159,20 @@ export async function expensivePrompts(organizationId: string) {
     costUsd: r.costUsd,
     agentId: r.agentId,
     taskId: r.taskId,
+    createdAt: r.createdAt,
   }));
 }
 
 /** Inefficient loops: signatures repeated within a session above threshold. */
-export async function inefficientLoops(organizationId: string) {
+export async function inefficientLoops(organizationId: string, range?: DateRange) {
   const grouped = await prisma.llmRequest.groupBy({
     by: ['sessionId', 'signature'],
-    where: { organizationId, signature: { not: null }, sessionId: { not: null } },
+    where: {
+      organizationId,
+      signature: { not: null },
+      sessionId: { not: null },
+      ...createdAt(range),
+    },
     _count: true,
     having: { signature: { _count: { gte: config.loopThreshold } } },
   });
@@ -146,11 +181,30 @@ export async function inefficientLoops(organizationId: string) {
     .sort((a, b) => b.repeats - a.repeats);
 }
 
+export async function recentRequests(organizationId: string, range?: DateRange) {
+  return prisma.llmRequest.findMany({
+    where: { organizationId, ...createdAt(range) },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: {
+      id: true,
+      model: true,
+      status: true,
+      decision: true,
+      estimatedCostUsd: true,
+      reservedTokens: true,
+      createdAt: true,
+      agentId: true,
+      taskId: true,
+    },
+  });
+}
+
 /** Simple heuristic optimization recommendations. */
-export async function recommendations(organizationId: string) {
+export async function recommendations(organizationId: string, range?: DateRange) {
   const recs: { type: string; message: string; severity: 'info' | 'warn' }[] = [];
 
-  const loops = await inefficientLoops(organizationId);
+  const loops = await inefficientLoops(organizationId, range);
   if (loops.length > 0) {
     recs.push({
       type: 'loop',
@@ -159,7 +213,9 @@ export async function recommendations(organizationId: string) {
     });
   }
 
-  const failed = await prisma.llmRequest.count({ where: { organizationId, status: 'failed' } });
+  const failed = await prisma.llmRequest.count({
+    where: { organizationId, status: 'failed', ...createdAt(range) },
+  });
   if (failed > 0) {
     recs.push({
       type: 'retries',
@@ -168,7 +224,10 @@ export async function recommendations(organizationId: string) {
     });
   }
 
-  const cached = await prisma.tokenUsage.aggregate({ where: { organizationId }, _sum: { cachedTokens: true, inputTokens: true } });
+  const cached = await prisma.tokenUsage.aggregate({
+    where: { organizationId, ...createdAt(range) },
+    _sum: { cachedTokens: true, inputTokens: true },
+  });
   const cachedTok = cached._sum.cachedTokens ?? 0;
   const inputTok = cached._sum.inputTokens ?? 0;
   if (inputTok > 0 && cachedTok / inputTok < 0.1) {
@@ -181,7 +240,7 @@ export async function recommendations(organizationId: string) {
 
   const byModel = await prisma.tokenUsage.groupBy({
     by: ['model'],
-    where: { organizationId },
+    where: { organizationId, ...createdAt(range) },
     _sum: { costUsd: true },
   });
   const topModel = byModel.sort((a, b) => (b._sum.costUsd ?? 0) - (a._sum.costUsd ?? 0))[0];

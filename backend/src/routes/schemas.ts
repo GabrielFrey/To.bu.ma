@@ -61,10 +61,13 @@ export const messageSchema = z.object({
 
 export const messagesSchema = z.array(messageSchema).max(MAX_MESSAGES);
 
-export const chargebackQuerySchema = z.object({
-  groupBy: z.enum(['agent', 'task', 'project', 'user']).default('agent'),
+export const rangeQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
+});
+
+export const chargebackQuerySchema = rangeQuerySchema.extend({
+  groupBy: z.enum(['agent', 'task', 'project', 'user']).default('agent'),
 });
 
 export function parseDateRange(q: { from?: string; to?: string }) {
