@@ -7,6 +7,7 @@ import { registerRoutes } from './routes/index.js';
 import { registerProxyRoutes } from './routes/proxy.js';
 import { expireStaleReservations } from './services/accounting.js';
 import { initTelemetry } from './telemetry.js';
+import { registerIpRateLimit } from './rateLimit.js';
 
 /** Rate-limit bucket: the caller's key however they sent it, else their IP. */
 function rateLimitKey(req: { headers: Record<string, unknown>; ip: string }): string {
@@ -24,11 +25,14 @@ export async function buildServer() {
   });
 
   await app.register(cors, { origin: true });
+  // Per-key limit (API key, or IP when keyless).
   await app.register(rateLimit, {
-    max: 300,
-    timeWindow: '1 minute',
+    max: config.rateLimitMax,
+    timeWindow: config.rateLimitWindowMs,
     keyGenerator: (req) => rateLimitKey(req as never),
   });
+  // Additional per-IP limit on top of the per-key limit (see rateLimit.ts).
+  registerIpRateLimit(app);
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ZodError) {

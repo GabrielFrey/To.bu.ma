@@ -41,6 +41,13 @@ export const config = {
   assistantApprovalUsdLimit: Number(process.env.TBM_ASSISTANT_APPROVAL_USD_LIMIT ?? 1),
   // Max accepted request body. Bounds the tokenizer work a single call can cause.
   bodyLimitBytes: Number(process.env.TBM_BODY_LIMIT_BYTES ?? 4 * 1024 * 1024),
+  // Per-key rate limit (the caller's API key, or their IP when keyless).
+  rateLimitMax: Number(process.env.TBM_RATE_LIMIT_MAX ?? 300),
+  rateLimitWindowMs: Number(process.env.TBM_RATE_LIMIT_WINDOW_MS ?? 60_000),
+  // Additional per-IP rate limit, applied on top of the per-key limit so a single
+  // source IP cannot bypass the cap by rotating keys. Set max <= 0 to disable.
+  ipRateLimitMax: Number(process.env.TBM_IP_RATE_LIMIT_MAX ?? 600),
+  ipRateLimitWindowMs: Number(process.env.TBM_IP_RATE_LIMIT_WINDOW_MS ?? 60_000),
   // Outbound webhook delivery: retry with exponential backoff.
   webhookMaxAttempts: Number(process.env.TBM_WEBHOOK_MAX_ATTEMPTS ?? 5),
   webhookBackoffMs: Number(process.env.TBM_WEBHOOK_BACKOFF_MS ?? 1000),

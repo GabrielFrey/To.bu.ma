@@ -368,8 +368,11 @@ transparent OpenAI-compatible proxy route; streaming incremental accounting. See
 
 Multi-tenant isolation (every query scoped to the API key's org), RBAC
 (`viewer<member<admin<owner`), API keys stored as SHA-256 hashes, provider keys encrypted with
-AES-256-GCM (`MASTER_KEY`), per-key rate limiting, policy-event audit trail, and an
-approval workflow for expensive actions. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §6.
+AES-256-GCM (`MASTER_KEY`), **per-key _and_ per-IP rate limiting** (the per-IP cap sits on top of
+the per-key limit so one source IP can't multiply its allowance by rotating keys; both windows and
+maxima are env-configurable — `TBM_RATE_LIMIT_MAX/_WINDOW_MS`, `TBM_IP_RATE_LIMIT_MAX/_WINDOW_MS`),
+policy-event audit trail, and an approval workflow for expensive actions.
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §6.
 
 ## License
 
