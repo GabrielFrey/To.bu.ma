@@ -14,6 +14,13 @@ export const config = {
   reservationSafetyMargin: 0.1,
   // Reservations older than this (ms) with no record are swept as expired.
   reservationTtlMs: 5 * 60 * 1000,
+  // Optional Redis for the reservation store (distributed, multi-node headroom).
+  // Unset → the default SQLite/Postgres-backed reservation store (no infra).
+  redisUrl: process.env.REDIS_URL ?? '',
+  // Embedding provider for semantic context compression: 'none' (default →
+  // heuristic-only), 'local' (deterministic, offline), or 'openai' (needs a key).
+  embeddingProvider: (process.env.TBM_EMBEDDING_PROVIDER ?? 'none') as 'none' | 'local' | 'openai',
+  embeddingModel: process.env.TBM_EMBEDDING_MODEL ?? 'text-embedding-3-small',
   // Loop / retry detection thresholds (defaults; policies can override).
   loopThreshold: 3,
   retryThreshold: 3,

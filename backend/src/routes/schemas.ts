@@ -61,6 +61,50 @@ export const messageSchema = z.object({
 
 export const messagesSchema = z.array(messageSchema).max(MAX_MESSAGES);
 
+/**
+ * Proxy body validators. The transparent OpenAI-compatible proxy accepts
+ * arbitrary provider fields (`.passthrough()` keeps them), but the parts that
+ * drive tokenizer work — message/array count and per-string content size — must
+ * be bounded. Without this, the flagship integration path hands an unbounded
+ * body straight to tiktoken, which is a CPU-amplification vector. Violations are
+ * surfaced by the proxy handler as an OpenAI-style 400, keeping the wire
+ * contract intact rather than emitting the generic Zod error shape.
+ */
+const boundedString = z.string().max(MAX_MESSAGE_CHARS);
+
+export const chatProxyBodySchema = z
+  .object({
+    model: z.string().max(128).optional(),
+    messages: z
+      .array(
+        z
+          .object({
+            role: z.string().min(1).max(64),
+            content: z.union([boundedString, z.array(z.any()).max(256)]).nullish(),
+          })
+          .passthrough()
+      )
+      .min(1)
+      .max(MAX_MESSAGES),
+    max_tokens: z.number().int().min(0).max(4_000_000).optional(),
+  })
+  .passthrough();
+
+export const completionsProxyBodySchema = z
+  .object({
+    model: z.string().max(128).optional(),
+    prompt: z.union([boundedString, z.array(z.any()).max(MAX_MESSAGES)]),
+    max_tokens: z.number().int().min(0).max(4_000_000).optional(),
+  })
+  .passthrough();
+
+export const embeddingsProxyBodySchema = z
+  .object({
+    model: z.string().max(128).optional(),
+    input: z.union([boundedString, z.array(z.any()).max(MAX_MESSAGES)]),
+  })
+  .passthrough();
+
 export const rangeQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),

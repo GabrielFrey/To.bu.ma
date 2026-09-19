@@ -1,7 +1,6 @@
 import { prisma } from '../db.js';
-import { config } from '../config.js';
 import type { BudgetLevel, ScopeChain } from '../types.js';
-import { expireStaleReservations } from './accounting.js';
+import { getReservationStore } from './reservations.js';
 
 export interface BudgetStatus {
   budgetId: string;
@@ -81,12 +80,6 @@ function scopeFilter(level: string, scopeId: string | null, chain: ScopeChain) {
   }
 }
 
-/** Same mapping against `LlmRequest`, which owns `userId` directly. */
-function reservationScopeFilter(level: string, scopeId: string | null, chain: ScopeChain) {
-  if (level === 'USER') return { userId: scopeId ?? chain.userId ?? '__none__' };
-  return scopeFilter(level, scopeId, chain);
-}
-
 /** Does this budget apply to the given scope chain? */
 function budgetApplies(level: string, scopeId: string | null, chain: ScopeChain): boolean {
   switch (level) {
@@ -130,29 +123,6 @@ async function computeUsed(
   return agg._sum.totalTokens ?? 0;
 }
 
-async function computeReserved(
-  level: string,
-  scopeId: string | null,
-  chain: ScopeChain,
-  metric: string
-): Promise<number> {
-  // Reservations are recorded per LLM call and carry no tool-token breakdown, so
-  // per-call and tool-call budgets have nothing outstanding to count.
-  if (PER_CALL_LEVELS.has(level) || level === 'TOOL_CALL') return 0;
-  const cutoff = new Date(Date.now() - config.reservationTtlMs);
-  const where: Record<string, unknown> = {
-    organizationId: chain.organizationId,
-    status: 'reserved',
-    createdAt: { gte: cutoff },
-    ...reservationScopeFilter(level, scopeId, chain),
-  };
-  const agg = await prisma.llmRequest.aggregate({
-    where,
-    _sum: { reservedTokens: true, estimatedCostUsd: true },
-  });
-  return metric === 'COST_USD' ? agg._sum.estimatedCostUsd ?? 0 : agg._sum.reservedTokens ?? 0;
-}
-
 /**
  * Resolve every budget that applies to the scope chain and classify each against
  * a projected additional amount (tokens or cost for the incoming call).
@@ -162,7 +132,8 @@ export async function resolveBudgets(
   projectedTokens: number,
   projectedCost: number
 ): Promise<BudgetStatus[]> {
-  await expireStaleReservations({ organizationId: chain.organizationId });
+  const reservations = getReservationStore();
+  await reservations.expireStale({ organizationId: chain.organizationId });
   const budgets = await prisma.budget.findMany({
     where: { organizationId: chain.organizationId, active: true },
   });
@@ -174,7 +145,7 @@ export async function resolveBudgets(
       const windowStart = resetWindowStart(b.resetPeriod);
       const [used, reserved] = await Promise.all([
         computeUsed(b.level, b.scopeId, chain, b.metric, windowStart),
-        computeReserved(b.level, b.scopeId, chain, b.metric),
+        reservations.reserved(chain, b.level, b.scopeId, b.metric as 'TOKENS' | 'COST_USD'),
       ]);
       const projectedAmount = b.metric === 'COST_USD' ? projectedCost : projectedTokens;
       const projected = used + reserved + projectedAmount;

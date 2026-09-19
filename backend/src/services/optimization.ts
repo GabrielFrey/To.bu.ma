@@ -1,6 +1,7 @@
 import { prisma } from '../db.js';
 import { estimateCost } from '../pricing.js';
 import { estimateTokens, type ChatMessage } from '../tokenizer.js';
+import { cosineSimilarity, getEmbeddingProvider, type EmbeddingProvider } from './embeddings.js';
 
 export interface ChooseModelParams {
   requestedModel: string;
@@ -21,6 +22,14 @@ export interface ChooseModelResult {
   reservedTokens: number;
   candidatesConsidered: number;
   fitsRemainingBudget: boolean;
+  /**
+   * Whether the reserved tokens fit the tightest remaining TOKENS budget. This
+   * is invariant across models (switching models cannot change token count), so
+   * it is reported separately from the cost constraint.
+   */
+  fitsTokenBudget: boolean;
+  /** Whether the selected model's estimated cost fits the tightest remaining COST_USD budget. */
+  fitsCostBudget: boolean;
 }
 
 function blendedPrice(c: { inputPerMTokens: number; outputPerMTokens: number }): number {
@@ -44,15 +53,20 @@ export async function chooseModel(params: ChooseModelParams): Promise<ChooseMode
   const expectedCompletionTokens = params.expectedCompletionTokens ?? 256;
   const reservedTokens = promptTokens + expectedCompletionTokens;
 
+  // The token constraint is candidate-invariant: no model swap changes how many
+  // tokens the prompt+completion reserve. Compute it once, up front, so it is
+  // never re-evaluated inside the per-candidate cost filter (that bug made every
+  // candidate look budget-unfit whenever the token budget alone was too tight).
+  const tokensOk = remainingBudgetTokens == null || reservedTokens <= remainingBudgetTokens;
+
   const requestedCost = await estimateCost(
     requestedModel,
     promptTokens,
     expectedCompletionTokens,
     organizationId
   );
-  const requestedFitsBudget =
-    (remainingBudgetUsd == null || requestedCost <= remainingBudgetUsd) &&
-    (remainingBudgetTokens == null || reservedTokens <= remainingBudgetTokens);
+  const requestedCostOk = remainingBudgetUsd == null || requestedCost <= remainingBudgetUsd;
+  const requestedFitsBudget = requestedCostOk && tokensOk;
 
   if (!preferCheaper && requestedFitsBudget) {
     return {
@@ -62,6 +76,8 @@ export async function chooseModel(params: ChooseModelParams): Promise<ChooseMode
       reservedTokens,
       candidatesConsidered: 0,
       fitsRemainingBudget: requestedFitsBudget,
+      fitsTokenBudget: tokensOk,
+      fitsCostBudget: requestedCostOk,
     };
   }
 
@@ -82,6 +98,8 @@ export async function chooseModel(params: ChooseModelParams): Promise<ChooseMode
       reservedTokens,
       candidatesConsidered: 0,
       fitsRemainingBudget: requestedFitsBudget,
+      fitsTokenBudget: tokensOk,
+      fitsCostBudget: requestedCostOk,
     };
   }
 
@@ -97,30 +115,39 @@ export async function chooseModel(params: ChooseModelParams): Promise<ChooseMode
   }
   scored.sort((a, b) => blendedPrice(a) - blendedPrice(b) || a.estimatedCostUsd - b.estimatedCostUsd);
 
-  const budgetFit = scored.filter((c) => {
-    const tokensOk = remainingBudgetTokens == null || reservedTokens <= remainingBudgetTokens;
-    const usdOk = remainingBudgetUsd == null || c.estimatedCostUsd <= remainingBudgetUsd;
-    return tokensOk && usdOk;
-  });
+  // Cost is the only per-candidate constraint; the token constraint (`tokensOk`)
+  // is handled separately above. Selecting the cheapest model can help cost, but
+  // never tokens, so a token-budget breach must not empty the candidate pool.
+  const costFit = scored.filter((c) => remainingBudgetUsd == null || c.estimatedCostUsd <= remainingBudgetUsd);
 
-  const pool = budgetFit.length > 0 ? budgetFit : scored;
+  const pool = costFit.length > 0 ? costFit : scored;
   const pick = pool[0];
-  const fitsRemainingBudget = budgetFit.some((c) => c.model === pick.model);
+  const fitsCostBudget = costFit.some((c) => c.model === pick.model);
+  const fitsTokenBudget = tokensOk;
+  const fitsRemainingBudget = fitsCostBudget && fitsTokenBudget;
 
   if (pick.model === requestedModel) {
     return {
       model: requestedModel,
-      reason: fitsRemainingBudget ? 'already cheapest that fits remaining budget' : 'already cheapest',
+      reason: fitsRemainingBudget
+        ? 'already cheapest that fits remaining budget'
+        : !fitsTokenBudget
+          ? 'already cheapest; reserved tokens exceed the remaining token budget (no model can fix this)'
+          : 'already cheapest',
       estimatedCostUsd: pick.estimatedCostUsd,
       reservedTokens,
       candidatesConsidered: scored.length,
       fitsRemainingBudget,
+      fitsTokenBudget,
+      fitsCostBudget,
     };
   }
 
-  const reason = !fitsRemainingBudget
-    ? `no model fits remaining budget; selected cheapest ${pick.model}`
-    : `downgraded to cheaper model ${pick.model} that fits remaining budget`;
+  const reason = fitsRemainingBudget
+    ? `downgraded to cheaper model ${pick.model} that fits remaining budget`
+    : !fitsTokenBudget
+      ? `selected cheapest ${pick.model}; reserved tokens exceed the remaining token budget (no model can fix this)`
+      : `no model fits remaining cost budget; selected cheapest ${pick.model}`;
 
   return {
     model: pick.model,
@@ -129,6 +156,8 @@ export async function chooseModel(params: ChooseModelParams): Promise<ChooseMode
     reservedTokens,
     candidatesConsidered: scored.length,
     fitsRemainingBudget,
+    fitsTokenBudget,
+    fitsCostBudget,
   };
 }
 
@@ -190,22 +219,14 @@ export function summarizeContext(
   return { messages: [...system, summary, ...recent], summarized: true };
 }
 
-/**
- * compressContextIfNeeded: apply dedup → prune → summarize until under the
- * target budget. Returns the transformed messages and what was applied.
- */
-export function compressContextIfNeeded(params: {
-  messages: ChatMessage[];
-  model: string;
-  targetTokens: number;
-}): { messages: ChatMessage[]; applied: string[]; before: number; after: number } {
-  const { model, targetTokens } = params;
+/** Heuristic compressor: dedupe → summarize → prune (the chars/4-era strategy). */
+function heuristicCompress(
+  messages: ChatMessage[],
+  model: string,
+  targetTokens: number
+): { messages: ChatMessage[]; applied: string[] } {
   const applied: string[] = [];
-  const before = estimateTokens(params.messages, model);
-  let msgs = params.messages;
-  if (before <= targetTokens) return { messages: msgs, applied, before, after: before };
-
-  msgs = dedupeMessages(msgs);
+  let msgs = dedupeMessages(messages);
   applied.push('dedupe');
 
   if (estimateTokens(msgs, model) > targetTokens) {
@@ -220,5 +241,89 @@ export function compressContextIfNeeded(params: {
     msgs = p.messages;
     applied.push('prune');
   }
-  return { messages: msgs, applied, before, after: estimateTokens(msgs, model) };
+  return { messages: msgs, applied };
+}
+
+/**
+ * Semantic (embedding-based) compression: drop messages whose meaning is already
+ * covered by a more-recent kept message (cosine similarity ≥ threshold). System
+ * messages are always kept; order is preserved. This removes *semantic* redundancy
+ * — paraphrases and repeated context — that the token-level dedupe cannot see.
+ */
+export async function semanticCompress(
+  messages: ChatMessage[],
+  provider: EmbeddingProvider,
+  opts: { threshold?: number } = {}
+): Promise<{ messages: ChatMessage[]; applied: string[] }> {
+  const threshold = opts.threshold ?? 0.92;
+  const system = messages.filter((m) => m.role === 'system');
+  const rest = messages.filter((m) => m.role !== 'system');
+  if (rest.length <= 1) return { messages, applied: [] };
+
+  const vectors = await provider.embed(rest.map((m) => m.content));
+  const keep = new Array<boolean>(rest.length).fill(false);
+  const keptVecs: number[][] = [];
+  // Walk newest → oldest; a message is redundant if it is semantically close to
+  // one we have already decided to keep (i.e. a more recent turn).
+  for (let i = rest.length - 1; i >= 0; i--) {
+    const v = vectors[i];
+    const redundant = keptVecs.some((kv) => cosineSimilarity(kv, v) >= threshold);
+    if (!redundant) {
+      keep[i] = true;
+      keptVecs.push(v);
+    }
+  }
+  const dropped = keep.filter((k) => !k).length;
+  if (dropped === 0) return { messages, applied: [] };
+  const keptRest = rest.filter((_, i) => keep[i]); // original order preserved
+  return { messages: [...system, ...keptRest], applied: [`semantic-dedupe(${dropped})`] };
+}
+
+/**
+ * compressContextIfNeeded: reduce a conversation to fit `targetTokens`.
+ *
+ * Strategy is pluggable. When an embedding provider is configured, semantic
+ * compression runs first to remove meaning-level redundancy; if the result is
+ * still over budget it is finished off with the heuristic compressor. With no
+ * embedding provider (the default) it is heuristic-only — identical to before —
+ * so offline demos and tests need no embedding backend.
+ */
+export async function compressContextIfNeeded(params: {
+  messages: ChatMessage[];
+  model: string;
+  targetTokens: number;
+}): Promise<{ messages: ChatMessage[]; applied: string[]; before: number; after: number; strategy: string }> {
+  const { model, targetTokens } = params;
+  const before = estimateTokens(params.messages, model);
+  if (before <= targetTokens) {
+    return { messages: params.messages, applied: [], before, after: before, strategy: 'none' };
+  }
+
+  const provider = getEmbeddingProvider();
+  if (provider) {
+    try {
+      const sem = await semanticCompress(params.messages, provider);
+      let msgs = sem.messages;
+      const applied = [...sem.applied];
+      let strategy = 'semantic';
+      if (estimateTokens(msgs, model) > targetTokens) {
+        const heur = heuristicCompress(msgs, model, targetTokens);
+        msgs = heur.messages;
+        applied.push(...heur.applied);
+        strategy = 'semantic+heuristic';
+      }
+      return { messages: msgs, applied, before, after: estimateTokens(msgs, model), strategy };
+    } catch {
+      // Any embedding failure falls back to the heuristic path — never break a call.
+    }
+  }
+
+  const heur = heuristicCompress(params.messages, model, targetTokens);
+  return {
+    messages: heur.messages,
+    applied: heur.applied,
+    before,
+    after: estimateTokens(heur.messages, model),
+    strategy: 'heuristic',
+  };
 }
