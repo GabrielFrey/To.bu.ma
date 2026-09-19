@@ -120,7 +120,7 @@ export async function registerGatewayRoutes(v1: FastifyInstance) {
         // Apply compression if the policy asked for it (or the caller opted in).
         if (body.autoCompress && ['compress', 'summarize', 'degrade'].includes(check.decision)) {
           const budgetTokens = Math.max(256, check.forecast.reservedTokens);
-          messages = compressContextIfNeeded({ messages, model: body.model, targetTokens: budgetTokens }).messages;
+          messages = (await compressContextIfNeeded({ messages, model: body.model, targetTokens: budgetTokens })).messages;
         }
 
         const model = check.recommendedModel ?? body.model;
@@ -184,7 +184,7 @@ export async function registerGatewayRoutes(v1: FastifyInstance) {
         targetTokens: z.number().int().positive(),
       })
       .parse(req.body);
-    return compressContextIfNeeded(body);
+    return await compressContextIfNeeded(body);
   });
 
   v1.post('/optimize/choose-model', async (req) => {

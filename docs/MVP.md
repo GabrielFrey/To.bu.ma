@@ -38,8 +38,15 @@ runnable demo and no external services.
 
 **Optimization (Phase 6)** — implemented: token estimation, `chooseModel` cheaper-routing,
 context pruning/compression, loop detection, repeated-failure detection, prompt-dedup signature.
-Stubbed/documented: semantic (embedding-based) compression, request batching, cached-context
-reuse accounting beyond the `cachedTokens` field.
+Stubbed/documented: request batching, cached-context reuse accounting beyond the `cachedTokens`
+field.
+
+**Scale & observability (Phase 7)** — implemented: pluggable token-reservation store with an
+optional Redis backend for multi-node headroom (`REDIS_URL`; DB store by default);
+OpenTelemetry tracing of check-budget → provider call → record-usage plus a `tbm.overhead.ms`
+metric that isolates the control layer's own latency from provider time (opt-in exporter, no-op
+without a collector); semantic (embedding-based) context compression as a pluggable strategy
+that falls back to the heuristic compressor when no embedding provider is configured.
 
 **Tests** — Vitest unit tests for Budget Engine + Token Accounting (acceptance criterion) and an
 integration test for check → mock LLM → record → analytics. `npm run demo` scripts the same flow.
@@ -48,10 +55,6 @@ integration test for check → mock LLM → record → analytics. `npm run demo`
 
 - **Full OpenAI-compatible proxy route** (`/v1/chat/completions` passthrough). The primitives
   exist; wiring a transparent proxy that rewrites arbitrary provider payloads is deferred.
-- **Semantic compression / embeddings** — needs an embedding provider; stubbed with a
-  deterministic heuristic and a clear TODO.
-- **Cross-region / distributed reservation store** — MVP reservations are DB rows (fine for
-  single-node). A Redis-backed reservation cache is noted for scale.
 - **Full RBAC UI & user management screens** — roles are enforced in the API; the dashboard is
   read-mostly for the demo.
 - **Streaming token accounting** — MVP records usage from the final `usage` object; streaming

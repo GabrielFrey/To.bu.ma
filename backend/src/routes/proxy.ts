@@ -185,7 +185,7 @@ async function runProxy(
   }
   if (kind === 'chat' && ['compress', 'summarize', 'truncate'].includes(check.decision)) {
     const target = compressionTarget(check);
-    const comp = compressContextIfNeeded({ messages, model: payload.model ?? model, targetTokens: target });
+    const comp = await compressContextIfNeeded({ messages, model: payload.model ?? model, targetTokens: target });
     payload.messages = comp.messages; // compress/truncate: actually modify messages
     messages = comp.messages;
   }

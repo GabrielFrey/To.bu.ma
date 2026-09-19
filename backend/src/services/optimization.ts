@@ -1,6 +1,7 @@
 import { prisma } from '../db.js';
 import { estimateCost } from '../pricing.js';
 import { estimateTokens, type ChatMessage } from '../tokenizer.js';
+import { cosineSimilarity, getEmbeddingProvider, type EmbeddingProvider } from './embeddings.js';
 
 export interface ChooseModelParams {
   requestedModel: string;
@@ -218,22 +219,14 @@ export function summarizeContext(
   return { messages: [...system, summary, ...recent], summarized: true };
 }
 
-/**
- * compressContextIfNeeded: apply dedup → prune → summarize until under the
- * target budget. Returns the transformed messages and what was applied.
- */
-export function compressContextIfNeeded(params: {
-  messages: ChatMessage[];
-  model: string;
-  targetTokens: number;
-}): { messages: ChatMessage[]; applied: string[]; before: number; after: number } {
-  const { model, targetTokens } = params;
+/** Heuristic compressor: dedupe → summarize → prune (the chars/4-era strategy). */
+function heuristicCompress(
+  messages: ChatMessage[],
+  model: string,
+  targetTokens: number
+): { messages: ChatMessage[]; applied: string[] } {
   const applied: string[] = [];
-  const before = estimateTokens(params.messages, model);
-  let msgs = params.messages;
-  if (before <= targetTokens) return { messages: msgs, applied, before, after: before };
-
-  msgs = dedupeMessages(msgs);
+  let msgs = dedupeMessages(messages);
   applied.push('dedupe');
 
   if (estimateTokens(msgs, model) > targetTokens) {
@@ -248,5 +241,89 @@ export function compressContextIfNeeded(params: {
     msgs = p.messages;
     applied.push('prune');
   }
-  return { messages: msgs, applied, before, after: estimateTokens(msgs, model) };
+  return { messages: msgs, applied };
+}
+
+/**
+ * Semantic (embedding-based) compression: drop messages whose meaning is already
+ * covered by a more-recent kept message (cosine similarity ≥ threshold). System
+ * messages are always kept; order is preserved. This removes *semantic* redundancy
+ * — paraphrases and repeated context — that the token-level dedupe cannot see.
+ */
+export async function semanticCompress(
+  messages: ChatMessage[],
+  provider: EmbeddingProvider,
+  opts: { threshold?: number } = {}
+): Promise<{ messages: ChatMessage[]; applied: string[] }> {
+  const threshold = opts.threshold ?? 0.92;
+  const system = messages.filter((m) => m.role === 'system');
+  const rest = messages.filter((m) => m.role !== 'system');
+  if (rest.length <= 1) return { messages, applied: [] };
+
+  const vectors = await provider.embed(rest.map((m) => m.content));
+  const keep = new Array<boolean>(rest.length).fill(false);
+  const keptVecs: number[][] = [];
+  // Walk newest → oldest; a message is redundant if it is semantically close to
+  // one we have already decided to keep (i.e. a more recent turn).
+  for (let i = rest.length - 1; i >= 0; i--) {
+    const v = vectors[i];
+    const redundant = keptVecs.some((kv) => cosineSimilarity(kv, v) >= threshold);
+    if (!redundant) {
+      keep[i] = true;
+      keptVecs.push(v);
+    }
+  }
+  const dropped = keep.filter((k) => !k).length;
+  if (dropped === 0) return { messages, applied: [] };
+  const keptRest = rest.filter((_, i) => keep[i]); // original order preserved
+  return { messages: [...system, ...keptRest], applied: [`semantic-dedupe(${dropped})`] };
+}
+
+/**
+ * compressContextIfNeeded: reduce a conversation to fit `targetTokens`.
+ *
+ * Strategy is pluggable. When an embedding provider is configured, semantic
+ * compression runs first to remove meaning-level redundancy; if the result is
+ * still over budget it is finished off with the heuristic compressor. With no
+ * embedding provider (the default) it is heuristic-only — identical to before —
+ * so offline demos and tests need no embedding backend.
+ */
+export async function compressContextIfNeeded(params: {
+  messages: ChatMessage[];
+  model: string;
+  targetTokens: number;
+}): Promise<{ messages: ChatMessage[]; applied: string[]; before: number; after: number; strategy: string }> {
+  const { model, targetTokens } = params;
+  const before = estimateTokens(params.messages, model);
+  if (before <= targetTokens) {
+    return { messages: params.messages, applied: [], before, after: before, strategy: 'none' };
+  }
+
+  const provider = getEmbeddingProvider();
+  if (provider) {
+    try {
+      const sem = await semanticCompress(params.messages, provider);
+      let msgs = sem.messages;
+      const applied = [...sem.applied];
+      let strategy = 'semantic';
+      if (estimateTokens(msgs, model) > targetTokens) {
+        const heur = heuristicCompress(msgs, model, targetTokens);
+        msgs = heur.messages;
+        applied.push(...heur.applied);
+        strategy = 'semantic+heuristic';
+      }
+      return { messages: msgs, applied, before, after: estimateTokens(msgs, model), strategy };
+    } catch {
+      // Any embedding failure falls back to the heuristic path — never break a call.
+    }
+  }
+
+  const heur = heuristicCompress(params.messages, model, targetTokens);
+  return {
+    messages: heur.messages,
+    applied: heur.applied,
+    before,
+    after: estimateTokens(heur.messages, model),
+    strategy: 'heuristic',
+  };
 }
