@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { estimateTokens } from '../tokenizer.js';
+import { getValidatedOpenAiBaseUrl } from '../security/ssrf.js';
 import type {
   ChatRequest,
   ChatResult,
@@ -12,7 +13,8 @@ import type {
 async function postChatCompletions(body: unknown, apiKey?: string): Promise<any> {
   const key = apiKey ?? config.openaiApiKey;
   if (!key) throw new Error('No OpenAI API key configured');
-  const res = await fetch(`${config.openaiBaseUrl}/chat/completions`, {
+  const baseUrl = getValidatedOpenAiBaseUrl();
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
     body: JSON.stringify(body),

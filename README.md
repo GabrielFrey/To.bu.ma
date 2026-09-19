@@ -372,6 +372,14 @@ AES-256-GCM (`MASTER_KEY`), **per-key _and_ per-IP rate limiting** (the per-IP c
 the per-key limit so one source IP can't multiply its allowance by rotating keys; both windows and
 maxima are env-configurable — `TBM_RATE_LIMIT_MAX/_WINDOW_MS`, `TBM_IP_RATE_LIMIT_MAX/_WINDOW_MS`),
 policy-event audit trail, and an approval workflow for expensive actions.
+
+**SSRF protection for `OPENAI_BASE_URL`.** A custom upstream base URL is validated before any
+outbound request: the scheme must be `https` and the host may not be `localhost`, a loopback,
+link-local (incl. the cloud metadata address `169.254.169.254`), or a private RFC1918 IP
+(`10.x`, `172.16–31.x`, `192.168.x`). This prevents a misconfigured or attacker-supplied base URL
+from turning a proxied call into a request into your private network. Set `NODE_ENV=development`
+to relax the policy (http + localhost/private) for local stacks and emulators.
+
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §6.
 
 ## License

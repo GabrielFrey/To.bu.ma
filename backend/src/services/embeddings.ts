@@ -1,4 +1,5 @@
 import { config } from '../config.js';
+import { assertConfiguredUpstreamUrl } from '../security/ssrf.js';
 
 /**
  * Pluggable embedding provider used by semantic context compression. Kept
@@ -64,6 +65,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     private readonly model: string = config.embeddingModel
   ) {}
   async embed(texts: string[]): Promise<number[][]> {
+    assertConfiguredUpstreamUrl(this.baseUrl); // SSRF guard before any outbound call
     const res = await fetch(`${this.baseUrl.replace(/\/$/, '')}/embeddings`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
