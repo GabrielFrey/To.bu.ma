@@ -99,6 +99,34 @@ inefficient/looping agents, and optimization recommendations.
 PostgreSQL via Prisma. For a zero-dependency local run the MVP uses **SQLite through the
 same Prisma client** (schema kept Postgres-compatible; switch documented in README).
 
+### 2.8 Reservation store (pluggable: DB or Redis)
+A reservation is the *soft hold* placed between `check-budget` and `record-usage` so that
+several in-flight calls cannot collectively overshoot a hard budget (see §4 and §5). The
+bookkeeping lives behind a small `ReservationStore` interface (`services/reservations.ts`)
+with two interchangeable backends, selected once at startup:
+
+| Backend | When | How outstanding headroom is tracked |
+|---|---|---|
+| `DbReservationStore` (default) | no `REDIS_URL` set | `llm_request` rows with `status = 'reserved'`, summed per budget scope with a Prisma aggregate and swept by TTL. Zero infrastructure; correct on a single node. This is the original behavior, unchanged. |
+| `RedisReservationStore` | `REDIS_URL` set | Per-scope Redis sorted sets (`tbm:resv:z:{org}:{level}:{id}`) whose members are reservation ids scored by expiry, plus a per-reservation hash holding `{tokens, cost, scopes}`. Reads drop expired members lazily (`ZREMRANGEBYSCORE`) then sum; expiry is enforced by TTL. |
+
+The interface is deliberately narrow:
+
+- `reserved(chain, level, scopeId, metric)` — outstanding tokens/cost for a budget scope
+  (`resolveBudgets` calls this instead of querying reservations directly).
+- `add(reservation)` — called by the gateway right after a reservation row is written, so the
+  reserve-then-verify re-read counts it under either backend.
+- `release(id)` — called by `record-usage` (finalized) and `blockReservation` (lost the race).
+- `expireStale(...)` — TTL sweep (a DB `updateMany`; a no-op for Redis, which expires lazily).
+
+In both modes the `llm_request` row is still written — it remains the source of truth for
+accounting and analytics. Only the *reserved-headroom* computation is swapped out. Redis moves
+that hot-path read off SQL and, crucially, makes the guarantee hold **across many backend
+nodes sharing one Redis** rather than only within a single process/DB. If `REDIS_URL` is set
+but the client cannot be constructed, TBM logs and falls back to the DB store, so a
+misconfiguration degrades rather than breaks. The reservation TTL is `reservationTtlMs`
+(default 5 min) in both backends.
+
 ## 3. Why these choices (trade-offs summarized; full list in README)
 
 - **Fastify over Express.** First-class TypeScript types, built-in JSON-schema validation,

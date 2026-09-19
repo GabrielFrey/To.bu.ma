@@ -14,6 +14,9 @@ export const config = {
   reservationSafetyMargin: 0.1,
   // Reservations older than this (ms) with no record are swept as expired.
   reservationTtlMs: 5 * 60 * 1000,
+  // Optional Redis for the reservation store (distributed, multi-node headroom).
+  // Unset → the default SQLite/Postgres-backed reservation store (no infra).
+  redisUrl: process.env.REDIS_URL ?? '',
   // Loop / retry detection thresholds (defaults; policies can override).
   loopThreshold: 3,
   retryThreshold: 3,
