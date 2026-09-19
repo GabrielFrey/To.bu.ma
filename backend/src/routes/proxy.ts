@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { ZodError } from 'zod';
 import { prisma } from '../db.js';
 import { config } from '../config.js';
 import { authenticateProxy } from '../auth.js';
@@ -9,7 +10,21 @@ import { readScopeHeaders, resolveScopeFromHeaders } from '../services/scope.js'
 import { compressContextIfNeeded } from '../services/optimization.js';
 import { forwardUpstream, pipeAndCaptureSse, type UpstreamKind, type UpstreamMode } from '../services/upstream.js';
 import { estimateTokens, type ChatMessage } from '../tokenizer.js';
+import {
+  chatProxyBodySchema,
+  completionsProxyBodySchema,
+  embeddingsProxyBodySchema,
+} from './schemas.js';
 import type { ScopeChain } from '../types.js';
+
+/** Bounded body validator per proxy kind (see schemas.ts for the rationale). */
+function proxyBodySchema(kind: UpstreamKind) {
+  return kind === 'chat'
+    ? chatProxyBodySchema
+    : kind === 'completions'
+      ? completionsProxyBodySchema
+      : embeddingsProxyBodySchema;
+}
 
 /** Map a blocking policy decision to an OpenAI-style error + HTTP status. */
 function blockedError(check: CheckBudgetResult): { status: number; body: unknown } {
@@ -67,7 +82,27 @@ async function loadUpstreamKey(organizationId: string, mode: UpstreamMode): Prom
 
 async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: UpstreamKind) {
   const organizationId = req.auth!.organizationId;
-  const payload: any = req.body ?? {};
+
+  // Validate + bound the body BEFORE any tokenizer work. A malformed or oversized
+  // body is rejected with an OpenAI-style 400 so SDK clients see a wire-compatible
+  // error instead of the generic Zod shape (and never reach tiktoken).
+  let payload: any;
+  try {
+    payload = proxyBodySchema(kind).parse(req.body ?? {});
+  } catch (err) {
+    if (err instanceof ZodError) {
+      const issue = err.issues[0];
+      return reply.code(400).send({
+        error: {
+          message: `Invalid request body: ${issue?.message ?? 'validation failed'}`,
+          type: 'invalid_request_error',
+          code: 'invalid_request',
+          param: issue?.path.length ? issue.path.join('.') : null,
+        },
+      });
+    }
+    throw err;
+  }
   const model: string = payload.model ?? 'gpt-4o-mini';
 
   // 1. Resolve tenant scope from headers (find-or-create by name).
