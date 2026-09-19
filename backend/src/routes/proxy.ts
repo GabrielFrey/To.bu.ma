@@ -10,6 +10,8 @@ import { readScopeHeaders, resolveScopeFromHeaders } from '../services/scope.js'
 import { compressContextIfNeeded } from '../services/optimization.js';
 import { forwardUpstream, pipeAndCaptureSse, type UpstreamKind, type UpstreamMode } from '../services/upstream.js';
 import { estimateTokens, type ChatMessage } from '../tokenizer.js';
+import { performance } from 'node:perf_hooks';
+import { withSpan, recordOverhead, recordProviderTime } from '../telemetry.js';
 import {
   chatProxyBodySchema,
   completionsProxyBodySchema,
@@ -80,7 +82,35 @@ async function loadUpstreamKey(organizationId: string, mode: UpstreamMode): Prom
   return config.openaiApiKey || undefined;
 }
 
+/**
+ * Traced proxy entry point: one `tbm.proxy` span wraps the budget check, the
+ * provider call, and record-usage; the overhead metric is total time minus the
+ * measured provider time so TBM's own cost is reported separately.
+ */
 async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: UpstreamKind) {
+  return withSpan(
+    'tbm.proxy',
+    async () => {
+      const started = performance.now();
+      const timing = { providerMs: 0, decision: 'allow' };
+      try {
+        return await runProxy(req, reply, kind, timing);
+      } finally {
+        const attrs = { 'tbm.route': 'proxy', 'tbm.kind': kind, 'tbm.decision': timing.decision };
+        recordProviderTime(timing.providerMs, attrs);
+        recordOverhead(performance.now() - started - timing.providerMs, attrs);
+      }
+    },
+    { 'tbm.kind': kind }
+  );
+}
+
+async function runProxy(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  kind: UpstreamKind,
+  timing: { providerMs: number; decision: string }
+) {
   const organizationId = req.auth!.organizationId;
 
   // Validate + bound the body BEFORE any tokenizer work. A malformed or oversized
@@ -137,6 +167,8 @@ async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: Upstr
     expectedCompletionTokens,
   });
 
+  timing.decision = check.decision;
+
   // 5. Truthful enforcement: block BEFORE forwarding.
   if (!check.allowed) {
     const { status, body } = blockedError(check);
@@ -164,9 +196,16 @@ async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: Upstr
 
   // 7. Forward to the upstream provider.
   let upstream: Response;
+  const providerStart = performance.now();
   try {
-    upstream = await forwardUpstream({ kind, mode, payload, apiKey });
+    upstream = await withSpan(
+      'tbm.provider_call',
+      () => forwardUpstream({ kind, mode, payload, apiKey }),
+      { 'tbm.provider': mode, 'tbm.kind': kind, 'tbm.model': payload.model ?? model }
+    );
+    timing.providerMs = performance.now() - providerStart;
   } catch (err) {
+    timing.providerMs = performance.now() - providerStart;
     await recordUsage({
       requestId: check.requestId!,
       organizationId,

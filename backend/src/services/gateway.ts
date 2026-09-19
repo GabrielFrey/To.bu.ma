@@ -11,6 +11,7 @@ import { blockReservation, createReservation } from './accounting.js';
 import { getReservationStore } from './reservations.js';
 import { emitEvent, approvalLinks, type EventType } from './events.js';
 import { lookupPromptCache, type PromptCacheHint } from './promptCache.js';
+import { withSpan } from '../telemetry.js';
 
 export interface CheckBudgetInput {
   chain: ScopeChain;
@@ -47,6 +48,23 @@ export interface CheckBudgetResult {
  * hold when several requests race for the same headroom.
  */
 export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetResult> {
+  return withSpan(
+    'tbm.check_budget',
+    (span) =>
+      checkBudgetImpl(input).then((result) => {
+        span.setAttributes({
+          'tbm.model': input.model,
+          'tbm.decision': result.decision,
+          'tbm.allowed': result.allowed,
+          'tbm.reserved_tokens': result.forecast.reservedTokens,
+        });
+        return result;
+      }),
+    { 'tbm.provider': input.provider ?? 'mock' }
+  );
+}
+
+async function checkBudgetImpl(input: CheckBudgetInput): Promise<CheckBudgetResult> {
   const provider = input.provider ?? 'mock';
   const promptTokens = estimateTokens(input.messages, input.model);
   const expectedCompletionTokens = input.expectedCompletionTokens ?? 256;

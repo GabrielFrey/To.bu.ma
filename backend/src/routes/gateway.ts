@@ -12,6 +12,8 @@ import { lookupPromptCache } from '../services/promptCache.js';
 import { assertScopeOwnership } from '../services/scopeGuard.js';
 import { orgId } from './context.js';
 import { messagesSchema, messageSchema, scopeSchema } from './schemas.js';
+import { performance } from 'node:perf_hooks';
+import { withSpan, recordOverhead, recordProviderTime } from '../telemetry.js';
 
 export async function registerGatewayRoutes(v1: FastifyInstance) {
   // These endpoints spend money, so they need at least `member` — a viewer key
@@ -79,6 +81,9 @@ export async function registerGatewayRoutes(v1: FastifyInstance) {
   });
 
   // Convenience: check -> provider call -> record (proves end-to-end).
+  // Traced as one span (tbm.llm_complete) with child spans for the budget check,
+  // the provider call, and record-usage; the TBM overhead metric is reported as
+  // total time minus the measured provider time.
   v1.post('/llm/complete', canSpend, async (req, reply) => {
     const body = z
       .object({
@@ -93,62 +98,81 @@ export async function registerGatewayRoutes(v1: FastifyInstance) {
       .parse(req.body);
     const chain = await assertScopeOwnership(orgId(req), body.scope);
 
-    let messages = body.messages;
-    const check = await checkBudget({
-      chain,
-      model: body.model,
-      provider: body.provider,
-      messages,
-      expectedCompletionTokens: body.expectedCompletionTokens ?? body.maxTokens,
+    return withSpan('tbm.llm_complete', async () => {
+      const started = performance.now();
+      let providerMs = 0;
+      let decision = 'allow';
+      try {
+        let messages = body.messages;
+        const check = await checkBudget({
+          chain,
+          model: body.model,
+          provider: body.provider,
+          messages,
+          expectedCompletionTokens: body.expectedCompletionTokens ?? body.maxTokens,
+        });
+        decision = check.decision;
+
+        if (!check.allowed) {
+          return reply.code(402).send({ blocked: true, decision: check.decision, reason: check.reason, check });
+        }
+
+        // Apply compression if the policy asked for it (or the caller opted in).
+        if (body.autoCompress && ['compress', 'summarize', 'degrade'].includes(check.decision)) {
+          const budgetTokens = Math.max(256, check.forecast.reservedTokens);
+          messages = compressContextIfNeeded({ messages, model: body.model, targetTokens: budgetTokens }).messages;
+        }
+
+        const model = check.recommendedModel ?? body.model;
+
+        // Load the provider key (encrypted at rest) for real providers.
+        let apiKey: string | undefined;
+        if (body.provider === 'openai') {
+          const pk = await prisma.providerKey.findFirst({
+            where: { organizationId: chain.organizationId, provider: 'openai' },
+          });
+          if (pk) apiKey = decryptSecret(pk.ciphertext);
+        }
+
+        try {
+          const provider = getProvider(body.provider);
+          const providerStart = performance.now();
+          const completion = await withSpan(
+            'tbm.provider_call',
+            () => provider.complete({ model, messages, maxTokens: body.maxTokens }, apiKey),
+            { 'tbm.provider': body.provider, 'tbm.model': model }
+          );
+          providerMs = performance.now() - providerStart;
+
+          const rec = await recordUsage({
+            requestId: check.requestId!,
+            organizationId: chain.organizationId,
+            model: completion.model,
+            usage: completion.usage,
+            status: 'completed',
+          });
+          return reply.send({
+            content: completion.content,
+            model: completion.model,
+            decision: check.decision,
+            usage: rec.usage,
+            check,
+          });
+        } catch (err) {
+          await recordUsage({
+            requestId: check.requestId!,
+            organizationId: chain.organizationId,
+            usage: { inputTokens: check.forecast.promptTokens, outputTokens: 0 },
+            status: 'failed',
+          });
+          return reply.code(502).send({ error: 'provider error', detail: (err as Error).message });
+        }
+      } finally {
+        const attrs = { 'tbm.route': 'llm_complete', 'tbm.provider': body.provider, 'tbm.decision': decision };
+        recordProviderTime(providerMs, attrs);
+        recordOverhead(performance.now() - started - providerMs, attrs);
+      }
     });
-
-    if (!check.allowed) {
-      return reply.code(402).send({ blocked: true, decision: check.decision, reason: check.reason, check });
-    }
-
-    // Apply compression if the policy asked for it (or the caller opted in).
-    if (body.autoCompress && ['compress', 'summarize', 'degrade'].includes(check.decision)) {
-      const budgetTokens = Math.max(256, check.forecast.reservedTokens);
-      messages = compressContextIfNeeded({ messages, model: body.model, targetTokens: budgetTokens }).messages;
-    }
-
-    const model = check.recommendedModel ?? body.model;
-
-    // Load the provider key (encrypted at rest) for real providers.
-    let apiKey: string | undefined;
-    if (body.provider === 'openai') {
-      const pk = await prisma.providerKey.findFirst({
-        where: { organizationId: chain.organizationId, provider: 'openai' },
-      });
-      if (pk) apiKey = decryptSecret(pk.ciphertext);
-    }
-
-    try {
-      const provider = getProvider(body.provider);
-      const completion = await provider.complete({ model, messages, maxTokens: body.maxTokens }, apiKey);
-      const rec = await recordUsage({
-        requestId: check.requestId!,
-        organizationId: chain.organizationId,
-        model: completion.model,
-        usage: completion.usage,
-        status: 'completed',
-      });
-      return reply.send({
-        content: completion.content,
-        model: completion.model,
-        decision: check.decision,
-        usage: rec.usage,
-        check,
-      });
-    } catch (err) {
-      await recordUsage({
-        requestId: check.requestId!,
-        organizationId: chain.organizationId,
-        usage: { inputTokens: check.forecast.promptTokens, outputTokens: 0 },
-        status: 'failed',
-      });
-      return reply.code(502).send({ error: 'provider error', detail: (err as Error).message });
-    }
   });
 
   // ---- Optimization helpers ----

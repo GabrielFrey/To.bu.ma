@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { computeCost, type UsageTokens } from '../pricing.js';
 import type { ScopeChain } from '../types.js';
 import { getReservationStore } from './reservations.js';
+import { withSpan } from '../telemetry.js';
 
 /**
  * Mark reservations older than TTL with no recorded usage as expired so they
@@ -102,6 +103,12 @@ export class UnknownRequestError extends Error {
  * call returns the existing usage row instead of double-counting.
  */
 export async function recordUsage(input: RecordUsageInput) {
+  return withSpan('tbm.record_usage', () => recordUsageImpl(input), {
+    'tbm.request_id': input.requestId,
+  });
+}
+
+async function recordUsageImpl(input: RecordUsageInput) {
   // Prisma silently drops `undefined` filters, so a missing tenant would turn the
   // ownership check below into a plain findFirst-by-id. Fail loudly instead.
   if (!input.organizationId) throw new Error('recordUsage requires organizationId');

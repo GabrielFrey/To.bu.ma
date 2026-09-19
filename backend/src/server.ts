@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { registerRoutes } from './routes/index.js';
 import { registerProxyRoutes } from './routes/proxy.js';
 import { expireStaleReservations } from './services/accounting.js';
+import { initTelemetry } from './telemetry.js';
 
 /** Rate-limit bucket: the caller's key however they sent it, else their IP. */
 function rateLimitKey(req: { headers: Record<string, unknown>; ip: string }): string {
@@ -52,6 +53,8 @@ export async function buildServer() {
 // Only start listening when run directly (not when imported by tests).
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
+  // Optional OpenTelemetry export (no-op unless an OTLP endpoint is configured).
+  initTelemetry();
   buildServer()
     .then((app) => app.listen({ port: config.port, host: '0.0.0.0' }))
     .then((addr) => {

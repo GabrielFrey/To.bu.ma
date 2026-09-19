@@ -89,6 +89,21 @@ React + Vite SPA. Reads the analytics REST endpoints: total spend, spend by agen
 project, active budgets & utilization, warnings, blocked requests, most expensive prompts,
 inefficient/looping agents, and optimization recommendations.
 
+#### Tracing & the honest-overhead metric
+
+TBM instruments the hot path with OpenTelemetry (`src/telemetry.ts`). Each gateway request
+is one trace with child spans for the three phases — `tbm.check_budget` → `tbm.provider_call` →
+`tbm.record_usage` — under a per-route parent (`tbm.llm_complete` / `tbm.proxy`). Two histograms
+separate TBM's own cost from the provider's: **`tbm.overhead.ms`** (budget check, policy eval,
+reservation, accounting — everything *except* the upstream call) and **`tbm.provider.ms`** (the
+upstream call itself). This makes "how much latency does the control layer add?" answerable
+directly rather than by subtraction.
+
+Instrumentation runs against the OpenTelemetry **API**, which is a no-op until an SDK is
+registered, so with no collector configured (tests, `npm run demo`, local dev) it costs
+effectively nothing and never throws. Export is opt-in via `OTEL_EXPORTER_OTLP_ENDPOINT`
+(or `TBM_OTEL=1`); a failure to start the exporter is logged and swallowed.
+
 ### 2.6 SDK / API
 - **REST API** (Fastify) — see below.
 - **SDKs**: TypeScript (primary) and Python wrapper, conceptually identical surface:
