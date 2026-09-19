@@ -2,6 +2,8 @@ import { prisma } from '../db.js';
 import { config } from '../config.js';
 import { computeCost, type UsageTokens } from '../pricing.js';
 import type { ScopeChain } from '../types.js';
+import { getReservationStore } from './reservations.js';
+import { withSpan } from '../telemetry.js';
 
 /**
  * Mark reservations older than TTL with no recorded usage as expired so they
@@ -71,6 +73,8 @@ export async function blockReservation(requestId: string, decision: string) {
     where: { id: requestId },
     data: { status: 'blocked', decision },
   });
+  // A blocked reservation no longer holds headroom.
+  await getReservationStore().release(requestId);
 }
 
 export interface RecordUsageInput {
@@ -99,6 +103,12 @@ export class UnknownRequestError extends Error {
  * call returns the existing usage row instead of double-counting.
  */
 export async function recordUsage(input: RecordUsageInput) {
+  return withSpan('tbm.record_usage', () => recordUsageImpl(input), {
+    'tbm.request_id': input.requestId,
+  });
+}
+
+async function recordUsageImpl(input: RecordUsageInput) {
   // Prisma silently drops `undefined` filters, so a missing tenant would turn the
   // ownership check below into a plain findFirst-by-id. Fail loudly instead.
   if (!input.organizationId) throw new Error('recordUsage requires organizationId');
@@ -140,6 +150,9 @@ export async function recordUsage(input: RecordUsageInput) {
     where: { id: request.id },
     data: { status, model, completedAt: new Date() },
   });
+
+  // The reservation is finalized; release the outstanding headroom it held.
+  await getReservationStore().release(request.id);
 
   return { request, usage, idempotent: false };
 }

@@ -8,8 +8,10 @@ import { detectLoopSignals, requestSignature } from './loopDetection.js';
 import { evaluatePolicies, fallbackToDecision, type PolicyDecision } from './policyEngine.js';
 import { chooseModel } from './optimization.js';
 import { blockReservation, createReservation } from './accounting.js';
+import { getReservationStore } from './reservations.js';
 import { emitEvent, approvalLinks, type EventType } from './events.js';
 import { lookupPromptCache, type PromptCacheHint } from './promptCache.js';
+import { withSpan } from '../telemetry.js';
 
 export interface CheckBudgetInput {
   chain: ScopeChain;
@@ -46,6 +48,23 @@ export interface CheckBudgetResult {
  * hold when several requests race for the same headroom.
  */
 export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetResult> {
+  return withSpan(
+    'tbm.check_budget',
+    (span) =>
+      checkBudgetImpl(input).then((result) => {
+        span.setAttributes({
+          'tbm.model': input.model,
+          'tbm.decision': result.decision,
+          'tbm.allowed': result.allowed,
+          'tbm.reserved_tokens': result.forecast.reservedTokens,
+        });
+        return result;
+      }),
+    { 'tbm.provider': input.provider ?? 'mock' }
+  );
+}
+
+async function checkBudgetImpl(input: CheckBudgetInput): Promise<CheckBudgetResult> {
   const provider = input.provider ?? 'mock';
   const promptTokens = estimateTokens(input.messages, input.model);
   const expectedCompletionTokens = input.expectedCompletionTokens ?? 256;
@@ -127,6 +146,19 @@ export async function checkBudget(input: CheckBudgetInput): Promise<CheckBudgetR
     decision: policy.decision,
     status: allowed ? 'reserved' : 'blocked',
   });
+
+  // Register the reservation in the headroom store (no-op for the DB store, whose
+  // source of truth is the row above; a real write for the Redis store) so the
+  // reserve-then-verify re-read below counts it under either backend.
+  if (allowed) {
+    await getReservationStore().add({
+      id: reservation.id,
+      chain: input.chain,
+      reservedTokens,
+      estimatedCostUsd,
+      createdAt: reservation.createdAt,
+    });
+  }
 
   // Reserve-then-verify: the row above is now counted in every applicable
   // budget's `reserved` total, so re-reading with a zero projection yields the

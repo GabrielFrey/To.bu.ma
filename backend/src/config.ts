@@ -14,6 +14,13 @@ export const config = {
   reservationSafetyMargin: 0.1,
   // Reservations older than this (ms) with no record are swept as expired.
   reservationTtlMs: 5 * 60 * 1000,
+  // Optional Redis for the reservation store (distributed, multi-node headroom).
+  // Unset → the default SQLite/Postgres-backed reservation store (no infra).
+  redisUrl: process.env.REDIS_URL ?? '',
+  // Embedding provider for semantic context compression: 'none' (default →
+  // heuristic-only), 'local' (deterministic, offline), or 'openai' (needs a key).
+  embeddingProvider: (process.env.TBM_EMBEDDING_PROVIDER ?? 'none') as 'none' | 'local' | 'openai',
+  embeddingModel: process.env.TBM_EMBEDDING_MODEL ?? 'text-embedding-3-small',
   // Loop / retry detection thresholds (defaults; policies can override).
   loopThreshold: 3,
   retryThreshold: 3,
@@ -34,6 +41,13 @@ export const config = {
   assistantApprovalUsdLimit: Number(process.env.TBM_ASSISTANT_APPROVAL_USD_LIMIT ?? 1),
   // Max accepted request body. Bounds the tokenizer work a single call can cause.
   bodyLimitBytes: Number(process.env.TBM_BODY_LIMIT_BYTES ?? 4 * 1024 * 1024),
+  // Per-key rate limit (the caller's API key, or their IP when keyless).
+  rateLimitMax: Number(process.env.TBM_RATE_LIMIT_MAX ?? 300),
+  rateLimitWindowMs: Number(process.env.TBM_RATE_LIMIT_WINDOW_MS ?? 60_000),
+  // Additional per-IP rate limit, applied on top of the per-key limit so a single
+  // source IP cannot bypass the cap by rotating keys. Set max <= 0 to disable.
+  ipRateLimitMax: Number(process.env.TBM_IP_RATE_LIMIT_MAX ?? 600),
+  ipRateLimitWindowMs: Number(process.env.TBM_IP_RATE_LIMIT_WINDOW_MS ?? 60_000),
   // Outbound webhook delivery: retry with exponential backoff.
   webhookMaxAttempts: Number(process.env.TBM_WEBHOOK_MAX_ATTEMPTS ?? 5),
   webhookBackoffMs: Number(process.env.TBM_WEBHOOK_BACKOFF_MS ?? 1000),

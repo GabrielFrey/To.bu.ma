@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { ZodError } from 'zod';
 import { prisma } from '../db.js';
 import { config } from '../config.js';
 import { authenticateProxy } from '../auth.js';
@@ -9,7 +10,23 @@ import { readScopeHeaders, resolveScopeFromHeaders } from '../services/scope.js'
 import { compressContextIfNeeded } from '../services/optimization.js';
 import { forwardUpstream, pipeAndCaptureSse, type UpstreamKind, type UpstreamMode } from '../services/upstream.js';
 import { estimateTokens, type ChatMessage } from '../tokenizer.js';
+import { performance } from 'node:perf_hooks';
+import { withSpan, recordOverhead, recordProviderTime } from '../telemetry.js';
+import {
+  chatProxyBodySchema,
+  completionsProxyBodySchema,
+  embeddingsProxyBodySchema,
+} from './schemas.js';
 import type { ScopeChain } from '../types.js';
+
+/** Bounded body validator per proxy kind (see schemas.ts for the rationale). */
+function proxyBodySchema(kind: UpstreamKind) {
+  return kind === 'chat'
+    ? chatProxyBodySchema
+    : kind === 'completions'
+      ? completionsProxyBodySchema
+      : embeddingsProxyBodySchema;
+}
 
 /** Map a blocking policy decision to an OpenAI-style error + HTTP status. */
 function blockedError(check: CheckBudgetResult): { status: number; body: unknown } {
@@ -65,9 +82,57 @@ async function loadUpstreamKey(organizationId: string, mode: UpstreamMode): Prom
   return config.openaiApiKey || undefined;
 }
 
+/**
+ * Traced proxy entry point: one `tbm.proxy` span wraps the budget check, the
+ * provider call, and record-usage; the overhead metric is total time minus the
+ * measured provider time so TBM's own cost is reported separately.
+ */
 async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: UpstreamKind) {
+  return withSpan(
+    'tbm.proxy',
+    async () => {
+      const started = performance.now();
+      const timing = { providerMs: 0, decision: 'allow' };
+      try {
+        return await runProxy(req, reply, kind, timing);
+      } finally {
+        const attrs = { 'tbm.route': 'proxy', 'tbm.kind': kind, 'tbm.decision': timing.decision };
+        recordProviderTime(timing.providerMs, attrs);
+        recordOverhead(performance.now() - started - timing.providerMs, attrs);
+      }
+    },
+    { 'tbm.kind': kind }
+  );
+}
+
+async function runProxy(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  kind: UpstreamKind,
+  timing: { providerMs: number; decision: string }
+) {
   const organizationId = req.auth!.organizationId;
-  const payload: any = req.body ?? {};
+
+  // Validate + bound the body BEFORE any tokenizer work. A malformed or oversized
+  // body is rejected with an OpenAI-style 400 so SDK clients see a wire-compatible
+  // error instead of the generic Zod shape (and never reach tiktoken).
+  let payload: any;
+  try {
+    payload = proxyBodySchema(kind).parse(req.body ?? {});
+  } catch (err) {
+    if (err instanceof ZodError) {
+      const issue = err.issues[0];
+      return reply.code(400).send({
+        error: {
+          message: `Invalid request body: ${issue?.message ?? 'validation failed'}`,
+          type: 'invalid_request_error',
+          code: 'invalid_request',
+          param: issue?.path.length ? issue.path.join('.') : null,
+        },
+      });
+    }
+    throw err;
+  }
   const model: string = payload.model ?? 'gpt-4o-mini';
 
   // 1. Resolve tenant scope from headers (find-or-create by name).
@@ -102,6 +167,8 @@ async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: Upstr
     expectedCompletionTokens,
   });
 
+  timing.decision = check.decision;
+
   // 5. Truthful enforcement: block BEFORE forwarding.
   if (!check.allowed) {
     const { status, body } = blockedError(check);
@@ -118,7 +185,7 @@ async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: Upstr
   }
   if (kind === 'chat' && ['compress', 'summarize', 'truncate'].includes(check.decision)) {
     const target = compressionTarget(check);
-    const comp = compressContextIfNeeded({ messages, model: payload.model ?? model, targetTokens: target });
+    const comp = await compressContextIfNeeded({ messages, model: payload.model ?? model, targetTokens: target });
     payload.messages = comp.messages; // compress/truncate: actually modify messages
     messages = comp.messages;
   }
@@ -129,9 +196,16 @@ async function handleProxy(req: FastifyRequest, reply: FastifyReply, kind: Upstr
 
   // 7. Forward to the upstream provider.
   let upstream: Response;
+  const providerStart = performance.now();
   try {
-    upstream = await forwardUpstream({ kind, mode, payload, apiKey });
+    upstream = await withSpan(
+      'tbm.provider_call',
+      () => forwardUpstream({ kind, mode, payload, apiKey }),
+      { 'tbm.provider': mode, 'tbm.kind': kind, 'tbm.model': payload.model ?? model }
+    );
+    timing.providerMs = performance.now() - providerStart;
   } catch (err) {
+    timing.providerMs = performance.now() - providerStart;
     await recordUsage({
       requestId: check.requestId!,
       organizationId,

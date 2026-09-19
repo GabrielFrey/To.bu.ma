@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { estimateTokens, type ChatMessage } from '../tokenizer.js';
+import { assertConfiguredUpstreamUrl, getValidatedOpenAiBaseUrl } from '../security/ssrf.js';
 
 export type UpstreamMode = 'openai' | 'mock';
 export type UpstreamKind = 'chat' | 'completions' | 'embeddings';
@@ -28,7 +29,15 @@ export async function forwardUpstream(params: ForwardParams): Promise<Response> 
 
   const key = params.apiKey ?? config.openaiApiKey;
   if (!key) throw new Error('No upstream API key configured (set OPENAI_API_KEY or store a provider key)');
-  const base = (params.baseUrl ?? config.openaiBaseUrl).replace(/\/$/, '');
+  // SSRF guard: a per-request override is validated too; otherwise use the
+  // validated configured base URL.
+  let base: string;
+  if (params.baseUrl) {
+    assertConfiguredUpstreamUrl(params.baseUrl);
+    base = params.baseUrl.replace(/\/$/, '');
+  } else {
+    base = getValidatedOpenAiBaseUrl().replace(/\/$/, '');
+  }
   return fetch(`${base}${upstreamPath(params.kind)}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },

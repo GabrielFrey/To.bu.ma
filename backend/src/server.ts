@@ -6,6 +6,8 @@ import { config } from './config.js';
 import { registerRoutes } from './routes/index.js';
 import { registerProxyRoutes } from './routes/proxy.js';
 import { expireStaleReservations } from './services/accounting.js';
+import { initTelemetry } from './telemetry.js';
+import { registerIpRateLimit } from './rateLimit.js';
 
 /** Rate-limit bucket: the caller's key however they sent it, else their IP. */
 function rateLimitKey(req: { headers: Record<string, unknown>; ip: string }): string {
@@ -23,11 +25,14 @@ export async function buildServer() {
   });
 
   await app.register(cors, { origin: true });
+  // Per-key limit (API key, or IP when keyless).
   await app.register(rateLimit, {
-    max: 300,
-    timeWindow: '1 minute',
+    max: config.rateLimitMax,
+    timeWindow: config.rateLimitWindowMs,
     keyGenerator: (req) => rateLimitKey(req as never),
   });
+  // Additional per-IP limit on top of the per-key limit (see rateLimit.ts).
+  registerIpRateLimit(app);
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof ZodError) {
@@ -52,6 +57,8 @@ export async function buildServer() {
 // Only start listening when run directly (not when imported by tests).
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
+  // Optional OpenTelemetry export (no-op unless an OTLP endpoint is configured).
+  initTelemetry();
   buildServer()
     .then((app) => app.listen({ port: config.port, host: '0.0.0.0' }))
     .then((addr) => {

@@ -23,12 +23,22 @@
   "dependencies": {
     "@fastify/cors": "^9.0.1",
     "@fastify/rate-limit": "^9.1.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.54.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.54.0",
+    "@opentelemetry/resources": "^1.27.0",
+    "@opentelemetry/sdk-metrics": "^1.27.0",
+    "@opentelemetry/sdk-node": "^0.54.0",
+    "@opentelemetry/semantic-conventions": "^1.27.0",
     "@prisma/client": "^5.19.1",
+    "dotenv": "^16.4.5",
     "fastify": "^4.28.1",
+    "ioredis": "^5.4.1",
     "js-tiktoken": "^1.0.14",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/node": "^22.5.4",
     "prisma": "^5.19.1",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
