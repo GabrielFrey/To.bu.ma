@@ -66,4 +66,13 @@ export default defineConfig({
       '/health': 'http://localhost:4000',
     },
   },
+  // `vite preview` serves the production build (real service worker + precache).
+  // Mirror the dev proxy so the previewed PWA can reach the backend too.
+  preview: {
+    port: 4173,
+    proxy: {
+      '/v1': 'http://localhost:4000',
+      '/health': 'http://localhost:4000',
+    },
+  },
 });
