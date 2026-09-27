@@ -13,6 +13,11 @@ export const KNOWN_ERROR_CODES = [
   'internal_error',
   'native_module_unavailable',
   'network',
+  'photo_permission',
+  'camera_permission',
+  'upload_failed',
+  'load_failed',
+  'app_not_installed',
 ] as const;
 
 export type KnownErrorCode = (typeof KNOWN_ERROR_CODES)[number];
@@ -43,6 +48,11 @@ export function errorTranslationKey(error: unknown): string {
     'invalid_image',
     'native_module_unavailable',
     'network',
+    'photo_permission',
+    'camera_permission',
+    'upload_failed',
+    'load_failed',
+    'app_not_installed',
   ];
   return translatable.includes(code) ? `errors.${code}` : 'errors.unknown';
 }

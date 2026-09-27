@@ -6,6 +6,25 @@ All notable changes to Sticker Studio are recorded here. The format follows
 
 ## [Unreleased]
 
+### M1–M6 — Screens
+
+- Onboarding with the AI disclaimer, a guest-first entry gate, and Sign in with Apple plus
+  Google, including the account-conflict screen a guest sees when the identity already
+  belongs to someone else.
+- Create flow: photo picker that works with iOS limited library access, on-device
+  crop/rotate with pinch and pan, 32 localised emotion presets, AI idea suggestions,
+  caption and refinement fields, and a notification prompt raised at the first generation
+  rather than on launch.
+- Result screen with a transparency checkerboard, feedback, prompt reuse and a report
+  action; library with keyset pagination and multi-select; packs with drag reordering, tray
+  icon selection and live WhatsApp readiness.
+- Export sheet for Photos, WhatsApp, Telegram, the share sheet and Messages, showing
+  unavailable targets as disabled with the reason.
+- Paywall with store-localised prices, restore purchases and the mandatory renewal
+  disclosure; settings with language, appearance, analytics opt-out, support and in-app
+  account deletion behind a typed confirmation.
+- Localised emotion names and error strings for all six languages.
+
 ### M0 — Project skeleton
 
 - Expo SDK 54 / React Native 0.81 project with TypeScript in strict mode,

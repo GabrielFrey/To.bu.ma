@@ -80,7 +80,8 @@
       "animal": "Питомцы"
     },
     "generationsLeft_other": "Осталось {{count}} генераций",
-    "exportsLeft_other": "Осталось {{count}} экспортов"
+    "exportsLeft_other": "Осталось {{count}} экспортов",
+    "limitedAccessBody": "Вы открыли доступ только к части фото. Можно добавить ещё в любой момент."
   },
   "crop": {
     "title": "Обрезка",
@@ -141,7 +142,8 @@
     "confirmDeleteBody": "Стикеры останутся в библиотеке.",
     "readyForWhatsApp": "Готов для WhatsApp",
     "notReadyForWhatsApp": "Для WhatsApp пока не готов",
-    "stickerCount_other": "{{count}} стикеров"
+    "stickerCount_other": "{{count}} стикеров",
+    "choose": "Выберите набор"
   },
   "export": {
     "title": "Экспорт",
@@ -178,7 +180,9 @@
       "too_few_stickers_other": "Добавьте ещё {{missing}} стикеров для экспорта в WhatsApp."
     },
     "confirmTitle_other": "Экспортировать {{count}} стикеров?",
-    "confirmBody_other": "Будет списано {{cost}} кредитов экспорта."
+    "confirmBody_other": "Будет списано {{cost}} кредитов экспорта.",
+    "needsPack": "Сначала добавьте стикеры в набор, затем отправьте весь набор.",
+    "singleStickerOnly": "Через «Поделиться» можно отправить только один стикер за раз."
   },
   "paywall": {
     "title": "Нужно больше кредитов",
@@ -205,7 +209,12 @@
     "terms": "Условия использования",
     "privacy": "Политика конфиденциальности",
     "generationCredits_other": "{{count}} генераций",
-    "exportCredits_other": "{{count}} экспортов"
+    "exportCredits_other": "{{count}} экспортов",
+    "periodWeek": "неделю",
+    "periodMonth": "месяц",
+    "periodQuarter": "3 месяца",
+    "periodHalfYear": "6 месяцев",
+    "periodYear": "год"
   },
   "settings": {
     "title": "Настройки",
@@ -279,18 +288,53 @@
   "errors": {
     "network": "Нет соединения. Проверьте интернет и попробуйте снова.",
     "unknown": "Что-то пошло не так. Попробуйте ещё раз.",
-    "photoPermission": "Нужен доступ к вашим фото.",
     "openSettings": "Открыть настройки",
-    "cameraPermission": "Нужен доступ к камере.",
-    "uploadFailed": "Не удалось загрузить фото.",
-    "loadFailed": "Не удалось загрузить.",
-    "notSignedIn": "Вы не вошли в аккаунт.",
     "insufficient_credits": "Кредиты закончились.",
     "rate_limited": "Слишком много запросов. Подождите минуту.",
     "moderation_blocked": "Фото или идея не соответствуют правилам.",
     "provider_timeout": "Стикер создавался слишком долго. Кредит вернули.",
     "provider_error": "Генератор дал сбой. Кредит вернули.",
     "invalid_image": "Не удалось прочитать изображение. Попробуйте другое фото.",
-    "native_module_unavailable": "Для этого экспорта нужна полная сборка приложения."
+    "native_module_unavailable": "Для этого экспорта нужна полная сборка приложения.",
+    "photo_permission": "Приложению нужен доступ к фото.",
+    "camera_permission": "Приложению нужен доступ к камере.",
+    "upload_failed": "Не удалось загрузить фото.",
+    "load_failed": "Не удалось загрузить.",
+    "not_signed_in": "Вы не вошли в аккаунт.",
+    "app_not_installed": "Это приложение не установлено на iPhone."
+  },
+  "emotions": {
+    "joy": "Радость",
+    "shock": "Шок",
+    "comic_surprise": "Комикс-удивление",
+    "crying": "Слёзы",
+    "laughing": "Хохот",
+    "facepalm": "Фейспалм",
+    "side_eye": "Косой взгляд",
+    "thumbs_up": "Класс",
+    "thinking": "Думаю",
+    "mind_blown": "Вынос мозга",
+    "hearts": "Влюблён",
+    "blowing_kiss": "Поцелуй",
+    "hug": "Обнимашки",
+    "birthday": "День рождения",
+    "congrats": "Поздравляю",
+    "cheers": "Тост",
+    "holiday": "Праздники",
+    "sleepy": "Сон",
+    "coffee": "Кофе",
+    "sunny_picnic": "Пикник",
+    "sport": "Спорт",
+    "gaming": "Игры",
+    "foodie": "Пицца",
+    "travel": "Путешествие",
+    "office_meme": "Офис",
+    "deadline": "Дедлайн",
+    "boss": "Босс",
+    "applause": "Аплодисменты",
+    "pet_cuddle": "Ласка",
+    "pet_grumpy": "Ворчун",
+    "pet_superhero": "Супергерой",
+    "sloth_relax": "Релакс"
   }
 }

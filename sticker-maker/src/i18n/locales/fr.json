@@ -76,7 +76,8 @@
       "work": "Travail",
       "love": "Amour",
       "animal": "Animaux"
-    }
+    },
+    "limitedAccessBody": "Vous avez partagé seulement quelques photos. Vous pouvez en ajouter à tout moment."
   },
   "crop": {
     "title": "Recadrer",
@@ -131,7 +132,8 @@
     "confirmDeleteTitle": "Supprimer ce pack ?",
     "confirmDeleteBody": "Les stickers restent dans votre bibliothèque.",
     "readyForWhatsApp": "Prêt pour WhatsApp",
-    "notReadyForWhatsApp": "Pas encore prêt pour WhatsApp"
+    "notReadyForWhatsApp": "Pas encore prêt pour WhatsApp",
+    "choose": "Choisir un pack"
   },
   "export": {
     "title": "Exporter",
@@ -162,7 +164,9 @@
       "missing_webp": "{{count}} sticker est encore en préparation. Réessayez dans un instant.",
       "empty_name": "Donnez un nom au pack.",
       "name_too_long": "Le nom du pack fait au maximum {{max}} caractères."
-    }
+    },
+    "needsPack": "Ajoutez d'abord ces stickers à un pack, puis envoyez le pack entier.",
+    "singleStickerOnly": "Le menu de partage ne prend qu’un sticker à la fois."
   },
   "paywall": {
     "title": "Plus de crédits",
@@ -185,7 +189,12 @@
     "bestValue": "Meilleur rapport",
     "subscriptionNote": "{{price}} par {{period}}, renouvelé automatiquement jusqu’à résiliation. Annulable à tout moment dans l’App Store.",
     "terms": "Conditions d’utilisation",
-    "privacy": "Politique de confidentialité"
+    "privacy": "Politique de confidentialité",
+    "periodWeek": "semaine",
+    "periodMonth": "mois",
+    "periodQuarter": "3 mois",
+    "periodHalfYear": "6 mois",
+    "periodYear": "an"
   },
   "settings": {
     "title": "Réglages",
@@ -259,18 +268,53 @@
   "errors": {
     "network": "Pas de connexion. Vérifiez votre réseau et réessayez.",
     "unknown": "Une erreur est survenue. Réessayez.",
-    "photoPermission": "Sticker Studio a besoin d’accéder à vos photos.",
     "openSettings": "Ouvrir Réglages",
-    "cameraPermission": "Sticker Studio a besoin d’accéder à l’appareil photo.",
-    "uploadFailed": "La photo n’a pas pu être envoyée.",
-    "loadFailed": "Chargement impossible.",
-    "notSignedIn": "Vous n’êtes pas connecté.",
     "insufficient_credits": "Vous n’avez plus de crédits.",
     "rate_limited": "Trop de requêtes. Attendez une minute.",
     "moderation_blocked": "Cette photo ou cette idée ne respecte pas nos règles de contenu.",
     "provider_timeout": "Le sticker a mis trop de temps. Votre crédit a été rendu.",
     "provider_error": "Le générateur a échoué. Votre crédit a été rendu.",
     "invalid_image": "Image illisible. Essayez une autre photo.",
-    "native_module_unavailable": "Cet export nécessite la version compilée complète de l’app."
+    "native_module_unavailable": "Cet export nécessite la version compilée complète de l’app.",
+    "photo_permission": "Sticker Studio a besoin d’accéder à vos photos.",
+    "camera_permission": "Sticker Studio a besoin d’accéder à l’appareil photo.",
+    "upload_failed": "La photo n’a pas pu être envoyée.",
+    "load_failed": "Impossible de charger.",
+    "not_signed_in": "Vous n’êtes pas connecté.",
+    "app_not_installed": "Cette application n’est pas installée sur cet iPhone."
+  },
+  "emotions": {
+    "joy": "Joie",
+    "shock": "Choc",
+    "comic_surprise": "Surprise BD",
+    "crying": "Larmes",
+    "laughing": "Fou rire",
+    "facepalm": "Facepalm",
+    "side_eye": "Regard en coin",
+    "thumbs_up": "Pouce en haut",
+    "thinking": "Réflexion",
+    "mind_blown": "Ébahi",
+    "hearts": "Amoureux",
+    "blowing_kiss": "Bisou",
+    "hug": "Câlin",
+    "birthday": "Anniversaire",
+    "congrats": "Félicitations",
+    "cheers": "Santé",
+    "holiday": "Fêtes",
+    "sleepy": "Dodo",
+    "coffee": "Café",
+    "sunny_picnic": "Pique-nique",
+    "sport": "Sport",
+    "gaming": "Gaming",
+    "foodie": "Pizza",
+    "travel": "Voyage",
+    "office_meme": "Bureau",
+    "deadline": "Urgence",
+    "boss": "Patron",
+    "applause": "Applaudissements",
+    "pet_cuddle": "Câlins",
+    "pet_grumpy": "Grognon",
+    "pet_superhero": "Super-héros",
+    "sloth_relax": "Détente"
   }
 }

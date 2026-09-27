@@ -76,7 +76,8 @@
       "work": "Trabalho",
       "love": "Amor",
       "animal": "Pets"
-    }
+    },
+    "limitedAccessBody": "Você compartilhou apenas algumas fotos. Pode adicionar mais quando quiser."
   },
   "crop": {
     "title": "Recortar",
@@ -131,7 +132,8 @@
     "confirmDeleteTitle": "Excluir este pacote?",
     "confirmDeleteBody": "Os stickers continuam na sua biblioteca.",
     "readyForWhatsApp": "Pronto para o WhatsApp",
-    "notReadyForWhatsApp": "Ainda não está pronto para o WhatsApp"
+    "notReadyForWhatsApp": "Ainda não está pronto para o WhatsApp",
+    "choose": "Escolha um pacote"
   },
   "export": {
     "title": "Exportar",
@@ -162,7 +164,9 @@
       "missing_webp": "{{count}} sticker ainda está sendo preparado. Tente em instantes.",
       "empty_name": "Dê um nome ao pacote.",
       "name_too_long": "O nome do pacote pode ter no máximo {{max}} caracteres."
-    }
+    },
+    "needsPack": "Primeiro adicione estes stickers a um pacote e depois envie o pacote inteiro.",
+    "singleStickerOnly": "O menu de compartilhar aceita um sticker por vez."
   },
   "paywall": {
     "title": "Mais créditos",
@@ -185,7 +189,12 @@
     "bestValue": "Melhor valor",
     "subscriptionNote": "{{price}} por {{period}}, renova automaticamente até ser cancelada. Cancele quando quiser na App Store.",
     "terms": "Termos de Uso",
-    "privacy": "Política de Privacidade"
+    "privacy": "Política de Privacidade",
+    "periodWeek": "semana",
+    "periodMonth": "mês",
+    "periodQuarter": "3 meses",
+    "periodHalfYear": "6 meses",
+    "periodYear": "ano"
   },
   "settings": {
     "title": "Ajustes",
@@ -259,18 +268,53 @@
   "errors": {
     "network": "Sem conexão. Verifique sua internet e tente de novo.",
     "unknown": "Algo deu errado. Tente novamente.",
-    "photoPermission": "O Sticker Studio precisa de acesso às suas fotos.",
     "openSettings": "Abrir Ajustes",
-    "cameraPermission": "O Sticker Studio precisa de acesso à câmera.",
-    "uploadFailed": "Não foi possível enviar a foto.",
-    "loadFailed": "Não foi possível carregar.",
-    "notSignedIn": "Você não está conectado.",
     "insufficient_credits": "Seus créditos acabaram.",
     "rate_limited": "Muitas solicitações. Espere um minuto.",
     "moderation_blocked": "Esta foto ou ideia não segue nossas regras de conteúdo.",
     "provider_timeout": "O sticker demorou demais. Devolvemos seu crédito.",
     "provider_error": "O gerador falhou. Devolvemos seu crédito.",
     "invalid_image": "Não foi possível ler a imagem. Tente outra foto.",
-    "native_module_unavailable": "Esta exportação precisa do build completo do app."
+    "native_module_unavailable": "Esta exportação precisa do build completo do app.",
+    "photo_permission": "O Sticker Studio precisa de acesso às suas fotos.",
+    "camera_permission": "O Sticker Studio precisa de acesso à câmera.",
+    "upload_failed": "Não foi possível enviar a foto.",
+    "load_failed": "Não foi possível carregar.",
+    "not_signed_in": "Você não está conectado.",
+    "app_not_installed": "Esse aplicativo não está instalado neste iPhone."
+  },
+  "emotions": {
+    "joy": "Alegria",
+    "shock": "Susto",
+    "comic_surprise": "Surpresa cômica",
+    "crying": "Choro",
+    "laughing": "Risada",
+    "facepalm": "Facepalm",
+    "side_eye": "Olhar de canto",
+    "thumbs_up": "Polegar acima",
+    "thinking": "Pensando",
+    "mind_blown": "Mente explodindo",
+    "hearts": "Apaixonado",
+    "blowing_kiss": "Beijo",
+    "hug": "Abraço",
+    "birthday": "Aniversário",
+    "congrats": "Parabéns",
+    "cheers": "Brinde",
+    "holiday": "Festas",
+    "sleepy": "Sono",
+    "coffee": "Café",
+    "sunny_picnic": "Piquenique",
+    "sport": "Treino",
+    "gaming": "Games",
+    "foodie": "Pizza",
+    "travel": "Viagem",
+    "office_meme": "Escritório",
+    "deadline": "Prazo",
+    "boss": "Chefe",
+    "applause": "Aplausos",
+    "pet_cuddle": "Carinho",
+    "pet_grumpy": "Ranzinza",
+    "pet_superhero": "Super-herói",
+    "sloth_relax": "Relax"
   }
 }

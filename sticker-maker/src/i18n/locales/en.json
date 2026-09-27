@@ -76,7 +76,8 @@
       "work": "Work",
       "love": "Love",
       "animal": "Pets"
-    }
+    },
+    "limitedAccessBody": "You shared only a few photos. You can add more at any time."
   },
   "crop": {
     "title": "Crop",
@@ -131,7 +132,8 @@
     "confirmDeleteTitle": "Delete this pack?",
     "confirmDeleteBody": "The stickers stay in your library.",
     "readyForWhatsApp": "Ready for WhatsApp",
-    "notReadyForWhatsApp": "Not ready for WhatsApp yet"
+    "notReadyForWhatsApp": "Not ready for WhatsApp yet",
+    "choose": "Choose a pack"
   },
   "export": {
     "title": "Export",
@@ -162,7 +164,9 @@
       "missing_webp": "{{count}} sticker is still being prepared. Try again in a moment.",
       "empty_name": "Give the pack a name.",
       "name_too_long": "Pack names can be at most {{max}} characters."
-    }
+    },
+    "needsPack": "Put these stickers in a pack first, then send the whole pack.",
+    "singleStickerOnly": "The share sheet takes one sticker at a time."
   },
   "paywall": {
     "title": "Get more credits",
@@ -185,7 +189,12 @@
     "bestValue": "Best value",
     "subscriptionNote": "{{price}} per {{period}}, renews automatically until cancelled. Cancel any time in the App Store.",
     "terms": "Terms of Use",
-    "privacy": "Privacy Policy"
+    "privacy": "Privacy Policy",
+    "periodWeek": "week",
+    "periodMonth": "month",
+    "periodQuarter": "3 months",
+    "periodHalfYear": "6 months",
+    "periodYear": "year"
   },
   "settings": {
     "title": "Settings",
@@ -259,18 +268,53 @@
   "errors": {
     "network": "No connection. Check your internet and try again.",
     "unknown": "Something went wrong. Please try again.",
-    "photoPermission": "Sticker Studio needs access to your photos.",
     "openSettings": "Open Settings",
-    "cameraPermission": "Sticker Studio needs access to the camera.",
-    "uploadFailed": "The photo could not be uploaded.",
-    "loadFailed": "This could not be loaded.",
-    "notSignedIn": "You are not signed in.",
     "insufficient_credits": "You are out of credits.",
     "rate_limited": "Too many requests. Please wait a minute.",
     "moderation_blocked": "This photo or idea does not fit our content rules.",
     "provider_timeout": "The sticker took too long to generate. Your credit was returned.",
     "provider_error": "The generator had a problem. Your credit was returned.",
     "invalid_image": "That image could not be read. Try another photo.",
-    "native_module_unavailable": "This export needs the full app build."
+    "native_module_unavailable": "This export needs the full app build.",
+    "photo_permission": "Sticker Studio needs access to your photos.",
+    "camera_permission": "Sticker Studio needs access to the camera.",
+    "upload_failed": "The photo could not be uploaded.",
+    "load_failed": "This could not be loaded.",
+    "not_signed_in": "You are not signed in.",
+    "app_not_installed": "That app is not installed on this iPhone."
+  },
+  "emotions": {
+    "joy": "Joy",
+    "shock": "Shock",
+    "comic_surprise": "Comic surprise",
+    "crying": "Crying",
+    "laughing": "Laughing",
+    "facepalm": "Facepalm",
+    "side_eye": "Side-eye",
+    "thumbs_up": "Thumbs up",
+    "thinking": "Thinking",
+    "mind_blown": "Mind blown",
+    "hearts": "In love",
+    "blowing_kiss": "Kiss",
+    "hug": "Hug",
+    "birthday": "Birthday",
+    "congrats": "Congrats",
+    "cheers": "Cheers",
+    "holiday": "Holidays",
+    "sleepy": "Sleepy",
+    "coffee": "Coffee",
+    "sunny_picnic": "Picnic",
+    "sport": "Workout",
+    "gaming": "Gaming",
+    "foodie": "Pizza time",
+    "travel": "Travel",
+    "office_meme": "Office",
+    "deadline": "Deadline",
+    "boss": "Boss",
+    "applause": "Applause",
+    "pet_cuddle": "Cuddles",
+    "pet_grumpy": "Grumpy",
+    "pet_superhero": "Superhero",
+    "sloth_relax": "Chill"
   }
 }

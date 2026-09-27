@@ -1,4 +1,22 @@
 // Native modules that have no JS fallback inside jest-expo.
+jest.mock('@react-native-async-storage/async-storage', () => {
+  const store = new Map<string, string>();
+  return {
+    __esModule: true,
+    default: {
+      getItem: jest.fn(async (key: string) => store.get(key) ?? null),
+      setItem: jest.fn(async (key: string, value: string) => {
+        store.set(key, value);
+      }),
+      removeItem: jest.fn(async (key: string) => {
+        store.delete(key);
+      }),
+      clear: jest.fn(async () => store.clear()),
+      getAllKeys: jest.fn(async () => [...store.keys()]),
+    },
+  };
+});
+
 jest.mock('expo-secure-store', () => {
   const store = new Map<string, string>();
   return {
