@@ -29,7 +29,6 @@ Telegram hand-off, StoreKit purchases, and push notifications.
 ## Quick start
 
 ```bash
-cd sticker-maker
 npm install
 cp .env.example .env.local                                  # fill in the Supabase values
 cp supabase/functions/.env.example supabase/functions/.env.local
@@ -150,8 +149,8 @@ Deno type-check for the functions:
 cd supabase/functions && deno check */index.ts
 ```
 
-CI (`.github/workflows/sticker-maker-ci.yml`) runs the app gate, the Deno check and the
-database tests on every push.
+CI (`.github/workflows/ci.yml`) runs the app gate, the Deno check and the database tests on
+every push.
 
 ## Project layout
 
