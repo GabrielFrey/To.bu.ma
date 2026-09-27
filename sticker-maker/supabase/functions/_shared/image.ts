@@ -26,10 +26,13 @@ async function ensureMagick(): Promise<void> {
   if (initialized) return;
   const wasmUrl = new URL('magick.wasm', import.meta.resolve('@imagemagick/magick-wasm'));
   // Locally the package resolves to a file: URL, which fetch cannot read.
-  const wasmBytes =
-    wasmUrl.protocol === 'file:'
-      ? await Deno.readFile(wasmUrl)
-      : new Uint8Array(await fetch(wasmUrl).then((response) => response.arrayBuffer()));
+  let wasmBytes: Uint8Array<ArrayBuffer>;
+  if (wasmUrl.protocol === 'file:') {
+    wasmBytes = await Deno.readFile(wasmUrl);
+  } else {
+    const response = await fetch(wasmUrl);
+    wasmBytes = new Uint8Array(await response.arrayBuffer());
+  }
   await initializeImageMagick(wasmBytes);
   initialized = true;
 }
