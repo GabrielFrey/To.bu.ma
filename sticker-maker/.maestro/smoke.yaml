@@ -1,0 +1,72 @@
+# Smoke flow: the path a first-time user takes, with no network dependency beyond the
+# anonymous sign in. Run against a development build on a simulator or device:
+#   npm run e2e:ios
+appId: com.emetsolutions.stickermaker
+name: Sticker Studio smoke
+---
+- launchApp:
+    clearState: true
+
+# Onboarding: three slides, the last one accepts the AI disclaimer and enters the app.
+- assertVisible: 'Turn any photo into a sticker'
+- tapOn: 'Continue'
+- tapOn: 'Continue'
+- tapOn: 'Get started'
+
+# Create tab is the landing screen and shows the credit balance.
+- assertVisible:
+    id: 'credit-pill'
+- assertVisible: 'Choose a photo'
+- assertVisible:
+    id: 'generate'
+
+# Generate is blocked until there is both a photo and an idea, so it starts disabled.
+- assertVisible:
+    id: 'generate'
+    enabled: false
+
+# Picking an idea alone is not enough either.
+- tapOn:
+    id: 'emotion-joy'
+- assertVisible:
+    id: 'generate'
+    enabled: false
+
+# Library starts empty and offers the way back to the create screen.
+- tapOn: 'My stickers'
+- assertVisible:
+    id: 'library-empty'
+
+# Packs: create one and land on its detail screen.
+- tapOn: 'Packs'
+- tapOn:
+    id: 'create-pack'
+- inputText: 'Smoke pack'
+- tapOn: 'Create'
+- assertVisible: 'Smoke pack'
+- assertVisible: 'Not ready for WhatsApp yet'
+- assertVisible:
+    id: 'add-stickers'
+- back
+
+# Settings: language switching and the required account deletion entry point.
+- tapOn: 'Settings'
+- tapOn:
+    id: 'settings-language'
+- tapOn:
+    id: 'language-ru'
+- assertVisible: 'Настройки'
+- tapOn:
+    id: 'settings-language'
+- tapOn:
+    id: 'language-en'
+- assertVisible: 'Settings'
+- assertVisible:
+    id: 'settings-delete-account'
+
+# The paywall must open, list restore purchases and close again.
+- tapOn: 'Get more credits'
+- assertVisible:
+    id: 'restore-purchases'
+- tapOn: 'Close'
+- assertVisible: 'Settings'
