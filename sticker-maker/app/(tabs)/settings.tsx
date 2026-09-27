@@ -16,6 +16,10 @@ import { env } from '../../src/config/env';
 import { useSignOut } from '../../src/features/account/useAccount';
 import { useAuth } from '../../src/features/auth/AuthProvider';
 import { useCredits } from '../../src/features/credits/useCredits';
+import {
+  useClearMessagesStickers,
+  useMessagesStickerCount,
+} from '../../src/features/export/useMessagesStickers';
 import { LANGUAGE_NAMES, type SupportedLanguage } from '../../src/i18n';
 import { usePreferences, type ThemePreference } from '../../src/store/preferences';
 import { spacing } from '../../src/theme';
@@ -34,6 +38,8 @@ export default function SettingsScreen() {
   const { isAnonymous, provider } = useAuth();
   const { balance } = useCredits();
   const signOut = useSignOut();
+  const messagesStickers = useMessagesStickerCount();
+  const clearMessagesStickers = useClearMessagesStickers();
 
   const language = usePreferences((state) => state.language);
   const themePreference = usePreferences((state) => state.theme);
@@ -102,6 +108,26 @@ export default function SettingsScreen() {
         value={t(THEME_LABELS[themePreference])}
         onPress={cycleTheme}
         testID="settings-theme"
+      />
+
+      <ListRow
+        title={t('settings.messagesStickers')}
+        subtitle={t('settings.messagesStickersBody')}
+        value={String(messagesStickers.data ?? 0)}
+        onPress={
+          (messagesStickers.data ?? 0) > 0
+            ? () =>
+                Alert.alert(t('settings.clearMessagesStickers'), undefined, [
+                  { text: t('common.cancel'), style: 'cancel' },
+                  {
+                    text: t('common.delete'),
+                    style: 'destructive',
+                    onPress: () => clearMessagesStickers.mutate(),
+                  },
+                ])
+            : undefined
+        }
+        testID="settings-messages-stickers"
       />
 
       <AppText variant="footnote" tone="muted">

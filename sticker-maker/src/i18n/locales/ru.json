@@ -237,7 +237,11 @@
     "analytics": "Отправлять анонимную статистику",
     "analyticsBody": "Помогает находить сбои. Ваши фото никогда не отправляются.",
     "version": "Версия {{version}} ({{build}})",
-    "credits": "Кредиты"
+    "credits": "Кредиты",
+    "messagesStickers": "Стикеры в Сообщениях",
+    "messagesStickersBody": "Стикеры, которые вы добавили в приложение «Сообщения» на этом iPhone.",
+    "clearMessagesStickers": "Удалить все из Сообщений",
+    "messagesStickersCleared": "Удалено из Сообщений."
   },
   "deleteAccount": {
     "title": "Удаление аккаунта",

@@ -217,7 +217,11 @@
     "analytics": "Partager des données d’usage anonymes",
     "analyticsBody": "Nous aide à repérer les plantages. N’inclut jamais vos photos.",
     "version": "Version {{version}} ({{build}})",
-    "credits": "Crédits"
+    "credits": "Crédits",
+    "messagesStickers": "Stickers dans Messages",
+    "messagesStickersBody": "Stickers que vous avez ajoutés à l’app Messages sur cet iPhone.",
+    "clearMessagesStickers": "Tout retirer de Messages",
+    "messagesStickersCleared": "Retirés de Messages."
   },
   "deleteAccount": {
     "title": "Supprimer le compte",

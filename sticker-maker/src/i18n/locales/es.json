@@ -217,7 +217,11 @@
     "analytics": "Compartir datos de uso anónimos",
     "analyticsBody": "Nos ayuda a detectar fallos. Nunca incluye tus fotos.",
     "version": "Versión {{version}} ({{build}})",
-    "credits": "Créditos"
+    "credits": "Créditos",
+    "messagesStickers": "Stickers en Mensajes",
+    "messagesStickersBody": "Stickers que añadiste a la app Mensajes en este iPhone.",
+    "clearMessagesStickers": "Quitar todos de Mensajes",
+    "messagesStickersCleared": "Eliminados de Mensajes."
   },
   "deleteAccount": {
     "title": "Eliminar cuenta",

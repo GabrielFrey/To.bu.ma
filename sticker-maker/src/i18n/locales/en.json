@@ -217,7 +217,11 @@
     "analytics": "Share anonymous usage data",
     "analyticsBody": "Helps us find crashes and broken flows. Never includes your photos.",
     "version": "Version {{version}} ({{build}})",
-    "credits": "Credits"
+    "credits": "Credits",
+    "messagesStickers": "Stickers in Messages",
+    "messagesStickersBody": "Stickers you added to the Messages app on this iPhone.",
+    "clearMessagesStickers": "Remove all from Messages",
+    "messagesStickersCleared": "Removed from Messages."
   },
   "deleteAccount": {
     "title": "Delete account",

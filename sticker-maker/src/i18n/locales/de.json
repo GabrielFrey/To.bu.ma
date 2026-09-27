@@ -217,7 +217,11 @@
     "analytics": "Anonyme Nutzungsdaten teilen",
     "analyticsBody": "Hilft uns, Abstürze zu finden. Enthält niemals deine Fotos.",
     "version": "Version {{version}} ({{build}})",
-    "credits": "Credits"
+    "credits": "Credits",
+    "messagesStickers": "Sticker in Nachrichten",
+    "messagesStickersBody": "Sticker, die du auf diesem iPhone zur Nachrichten-App hinzugefügt hast.",
+    "clearMessagesStickers": "Alle aus Nachrichten entfernen",
+    "messagesStickersCleared": "Aus Nachrichten entfernt."
   },
   "deleteAccount": {
     "title": "Konto löschen",
