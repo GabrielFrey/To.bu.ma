@@ -6,6 +6,22 @@ All notable changes to Sticker Studio are recorded here. The format follows
 
 ## [Unreleased]
 
+### M7 — Messages, tooling and docs
+
+- iMessage sticker extension (`targets/stickers`) whose sticker browser reads the PNG files
+  the app wrote into the shared App Group container, newest first, so it offers the
+  stickers the user actually made rather than a bundled set.
+- Settings row that shows how many stickers are in the Messages drawer and can clear them;
+  the App Group is the only way in, so the app has to be the way out too.
+- GitHub Actions workflow running three gates: the app (`tsc`, ESLint at zero warnings,
+  Jest), `deno check` over every Edge Function, and the pgTAP suite against a local
+  Supabase.
+- Maestro smoke flow covering onboarding, the disabled generate button, the empty library,
+  pack creation, a language switch and the paywall.
+- `README.md` with setup, environment split and service configuration; `docs/PLAN.md`,
+  `docs/DECISIONS.md` and `docs/APP_STORE_CHECKLIST.md`, including an explicit list of what
+  a Linux container could not execute.
+
 ### M1–M6 — Screens
 
 - Onboarding with the AI disclaimer, a guest-first entry gate, and Sign in with Apple plus
