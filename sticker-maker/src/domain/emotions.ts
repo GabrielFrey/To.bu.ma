@@ -1,3 +1,7 @@
+import presets from '../../supabase/functions/_shared/emotions.json';
+
+export type EmotionCategory = 'reaction' | 'celebration' | 'daily' | 'work' | 'love' | 'animal';
+
 export interface EmotionPreset {
   /** Stable id stored on the generation row; never localize this. */
   id: string;
@@ -6,252 +10,36 @@ export interface EmotionPreset {
   stickerEmojis: string[];
   /** English prompt fragment sent to the image model. */
   prompt: string;
-  category: 'reaction' | 'celebration' | 'daily' | 'work' | 'love' | 'animal';
+  category: EmotionCategory;
 }
 
-export const EMOTION_PRESETS: readonly EmotionPreset[] = [
-  {
-    id: 'joy',
-    emoji: '😄',
-    stickerEmojis: ['😄', '🎉'],
-    prompt: 'beaming with joy, wide happy smile, sparkling eyes',
-    category: 'reaction',
-  },
-  {
-    id: 'shock',
-    emoji: '😱',
-    stickerEmojis: ['😱'],
-    prompt: 'shocked, jaw dropped, eyes wide open',
-    category: 'reaction',
-  },
-  {
-    id: 'comic_surprise',
-    emoji: '💥',
-    stickerEmojis: ['💥', '😲'],
-    prompt: 'dramatic surprised face with comic-book energy, halftone dots, bold outlines',
-    category: 'reaction',
-  },
-  {
-    id: 'crying',
-    emoji: '😭',
-    stickerEmojis: ['😭'],
-    prompt: 'sobbing dramatically with cartoon tear streams',
-    category: 'reaction',
-  },
-  {
-    id: 'laughing',
-    emoji: '🤣',
-    stickerEmojis: ['🤣'],
-    prompt: 'laughing uncontrollably, head thrown back, tears of laughter',
-    category: 'reaction',
-  },
-  {
-    id: 'facepalm',
-    emoji: '🤦',
-    stickerEmojis: ['🤦'],
-    prompt: 'facepalming in disbelief, hand covering forehead',
-    category: 'reaction',
-  },
-  {
-    id: 'side_eye',
-    emoji: '👀',
-    stickerEmojis: ['👀'],
-    prompt: 'suspicious side-eye glance, one eyebrow raised',
-    category: 'reaction',
-  },
-  {
-    id: 'thumbs_up',
-    emoji: '👍',
-    stickerEmojis: ['👍'],
-    prompt: 'confident thumbs up with a friendly wink',
-    category: 'reaction',
-  },
-  {
-    id: 'thinking',
-    emoji: '🤔',
-    stickerEmojis: ['🤔'],
-    prompt: 'thinking hard, hand on chin, tiny question marks floating around',
-    category: 'reaction',
-  },
-  {
-    id: 'mind_blown',
-    emoji: '🤯',
-    stickerEmojis: ['🤯'],
-    prompt: 'mind blown, cartoon explosion above the head',
-    category: 'reaction',
-  },
-  {
-    id: 'hearts',
-    emoji: '😍',
-    stickerEmojis: ['😍', '❤️'],
-    prompt: 'in love, heart-shaped eyes, floating hearts around the head',
-    category: 'love',
-  },
-  {
-    id: 'blowing_kiss',
-    emoji: '😘',
-    stickerEmojis: ['😘'],
-    prompt: 'blowing a kiss, a small heart leaving the lips',
-    category: 'love',
-  },
-  {
-    id: 'hug',
-    emoji: '🤗',
-    stickerEmojis: ['🤗'],
-    prompt: 'offering a warm hug with open arms',
-    category: 'love',
-  },
-  {
-    id: 'birthday',
-    emoji: '🎂',
-    stickerEmojis: ['🎂', '🥳'],
-    prompt: 'wearing a party hat next to a birthday cake with candles, confetti in the air',
-    category: 'celebration',
-  },
-  {
-    id: 'congrats',
-    emoji: '🎉',
-    stickerEmojis: ['🎉'],
-    prompt: 'celebrating with confetti cannons and a big grin',
-    category: 'celebration',
-  },
-  {
-    id: 'cheers',
-    emoji: '🥂',
-    stickerEmojis: ['🥂'],
-    prompt: 'raising a glass for a toast, festive sparkles',
-    category: 'celebration',
-  },
-  {
-    id: 'holiday',
-    emoji: '🎄',
-    stickerEmojis: ['🎄'],
-    prompt: 'in a cozy winter holiday scene with a knitted hat and snowflakes',
-    category: 'celebration',
-  },
-  {
-    id: 'sleepy',
-    emoji: '😴',
-    stickerEmojis: ['😴'],
-    prompt: 'fast asleep with a nightcap and floating Z letters',
-    category: 'daily',
-  },
-  {
-    id: 'coffee',
-    emoji: '☕',
-    stickerEmojis: ['☕'],
-    prompt: 'clutching a huge coffee mug, barely awake, steam rising',
-    category: 'daily',
-  },
-  {
-    id: 'sunny_picnic',
-    emoji: '🧺',
-    stickerEmojis: ['🧺', '☀️'],
-    prompt: 'relaxing on a sunny picnic blanket with fruit and a straw hat',
-    category: 'daily',
-  },
-  {
-    id: 'sport',
-    emoji: '💪',
-    stickerEmojis: ['💪'],
-    prompt: 'flexing after a workout, sweatband, energetic pose',
-    category: 'daily',
-  },
-  {
-    id: 'gaming',
-    emoji: '🎮',
-    stickerEmojis: ['🎮'],
-    prompt: 'focused gamer with a headset and a controller, neon glow',
-    category: 'daily',
-  },
-  {
-    id: 'foodie',
-    emoji: '🍕',
-    stickerEmojis: ['🍕'],
-    prompt: 'joyfully holding a giant slice of pizza',
-    category: 'daily',
-  },
-  {
-    id: 'travel',
-    emoji: '✈️',
-    stickerEmojis: ['✈️'],
-    prompt: 'ready for travel with sunglasses and a tiny suitcase, paper plane nearby',
-    category: 'daily',
-  },
-  {
-    id: 'office_meme',
-    emoji: '💼',
-    stickerEmojis: ['💼'],
-    prompt: 'deadpan office worker holding a stack of paperwork, tie slightly loose',
-    category: 'work',
-  },
-  {
-    id: 'deadline',
-    emoji: '🔥',
-    stickerEmojis: ['🔥'],
-    prompt: 'typing frantically on a laptop while everything around is on cartoon fire',
-    category: 'work',
-  },
-  {
-    id: 'boss',
-    emoji: '😎',
-    stickerEmojis: ['😎'],
-    prompt: 'unbothered boss energy, sunglasses, arms crossed',
-    category: 'work',
-  },
-  {
-    id: 'applause',
-    emoji: '👏',
-    stickerEmojis: ['👏'],
-    prompt: 'slow sarcastic applause with a smirk',
-    category: 'work',
-  },
-  {
-    id: 'pet_cuddle',
-    emoji: '🐾',
-    stickerEmojis: ['🐾', '🥰'],
-    prompt: 'cuddling happily, fluffy and adorable, soft rim light',
-    category: 'animal',
-  },
-  {
-    id: 'pet_grumpy',
-    emoji: '😾',
-    stickerEmojis: ['😾'],
-    prompt: 'deeply unimpressed grumpy expression, squinting eyes',
-    category: 'animal',
-  },
-  {
-    id: 'pet_superhero',
-    emoji: '🦸',
-    stickerEmojis: ['🦸'],
-    prompt: 'wearing a tiny superhero cape, heroic pose, wind in the fur',
-    category: 'animal',
-  },
-  {
-    id: 'sloth_relax',
-    emoji: '🦥',
-    stickerEmojis: ['🦥'],
-    prompt: 'maximum sloth relaxation, lying back with a drink and half-closed eyes',
-    category: 'animal',
-  },
-];
+/**
+ * The presets live in `supabase/functions/_shared/emotions.json` so the Edge Function
+ * that actually builds the model prompt and the app that renders the picker can never
+ * drift apart. The app treats the prompt text as a preview: the server rebuilds it.
+ */
+export const EMOTION_PRESETS: readonly EmotionPreset[] = presets as EmotionPreset[];
 
-export const EMOTION_CATEGORIES = [
+export const EMOTION_CATEGORIES: readonly EmotionCategory[] = [
   'reaction',
   'celebration',
   'daily',
   'work',
   'love',
   'animal',
-] as const;
+];
 
 export function findEmotion(id: string | null | undefined): EmotionPreset | undefined {
   if (!id) return undefined;
   return EMOTION_PRESETS.find((preset) => preset.id === id);
 }
 
+export function emotionsByCategory(category: EmotionCategory): EmotionPreset[] {
+  return EMOTION_PRESETS.filter((preset) => preset.category === category);
+}
+
 export function randomEmotion(random: () => number = Math.random): EmotionPreset {
   const index = Math.floor(random() * EMOTION_PRESETS.length) % EMOTION_PRESETS.length;
-  // EMOTION_PRESETS is a non-empty literal array, so the index is always populated.
+  // EMOTION_PRESETS is seeded from a non-empty JSON file, so the index is populated.
   return EMOTION_PRESETS[index] as EmotionPreset;
 }
